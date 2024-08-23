@@ -1,0 +1,112 @@
+[build-system] # Require setuptool version due to https://github.com/pypa/setuptools/issues/2938
+requires = ["setuptools>=61.0.0", "wheel"]
+
+[project]
+name = "ukb_atlas"
+version = "0.1.0"
+description = "Generate meshes from UK Biobank data"
+authors = [{name = "Henrik Finsberg", email = "henriknf@simula.no"}]
+license = {file = "LICENSE"}
+readme = "README.md"
+dependencies = [
+    "h5py", "meshio", "numpy"
+]
+
+[project.scripts]
+ukb-atlas = "ukb.cli:main"
+
+[project.optional-dependencies]
+test = [
+    "pytest",
+    "pytest-cov",
+]
+dev = [
+    "bump-my-version",
+    "pre-commit",
+]
+
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+ukb = ["connectivity.txt"]
+
+[tool.aliases]
+test = "pytest"
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+
+[tool.mypy]
+files = ["src/ukb", "tests"]
+ignore_missing_imports = true
+
+
+[tool.ruff]
+
+# Exclude a variety of commonly ignored directories.
+exclude = [
+    "examples",
+    ".bzr",
+    ".direnv",
+    ".eggs",
+    ".git",
+    ".hg",
+    ".mypy_cache",
+    ".nox",
+    ".pants.d",
+    ".pytype",
+    ".ruff_cache",
+    ".svn",
+    ".tox",
+    ".venv",
+    "__pypackages__",
+    "_build",
+    "buck-out",
+    "build",
+    "dist",
+    "node_modules",
+    "venv",
+]
+
+# Same as Black.
+line-length = 100
+
+# Assume Python 3.10.
+target-version = "py310"
+
+[tool.ruff.lint]
+# Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
+select = ["E", "F"]
+ignore = ["E402", "E741", "E743", "E731"]
+
+# Allow autofix for all enabled rules (when `--fix`) is provided.
+fixable = ["A", "B", "C", "D", "E", "F"]
+unfixable = []
+
+# Allow unused variables when underscore-prefixed.
+dummy-variable-rgx = "^(_+|(_+[a-zA-Z0-9_]*[a-zA-Z0-9]+?))$"
+
+
+[tool.ruff.lint.mccabe]
+# Unlike Flake8, default to a complexity level of 10.
+max-complexity = 10
+
+
+[tool.bumpversion]
+allow_dirty = false
+commit = true
+message = "Bump version: {current_version} → {new_version}"
+tag = true
+sign_tags = false
+tag_name = "v{new_version}"
+tag_message = "Bump version: {current_version} → {new_version}"
+current_version = "0.1.0"
+
+
+[[tool.bumpversion.files]]
+filename = "pyproject.toml"
+search = 'version = "{current_version}"'
+replace = 'version = "{new_version}"'
