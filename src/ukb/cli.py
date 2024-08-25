@@ -48,13 +48,13 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--char_length_max",
         type=float,
-        default=3.0,
+        default=1.0,
         help="Maximum characteristic length of the mesh elements.",
     )
     parser.add_argument(
         "--char_length_min",
         type=float,
-        default=3.0,
+        default=1.0,
         help="Minimum characteristic length of the mesh elements.",
     )
 
@@ -88,7 +88,7 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
             valve_mesh = surface.get_valve_mesh(surface_name=valve, points=getattr(points, case))
             valve_mesh.write(str(outdir / f"{valve}_{case}.stl"))
 
-        for chamber in ["LV", "RV"]:
+        for chamber in ["LV", "RV", "RVFW"]:
             chamber_mesh = surface.get_chamber_mesh(
                 surface_name=chamber, points=getattr(points, case)
             )
@@ -101,4 +101,5 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
                 char_length_min=args["char_length_min"],
                 case=case,
             )
+
     return 0

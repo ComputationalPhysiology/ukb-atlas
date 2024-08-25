@@ -51,7 +51,7 @@ def download_atlas(outdir: Path, all: bool = True) -> Path:
 
         path = outdir / "UKBRVLV.zip"
 
-    if not path.exists():
+    if not path.with_suffix(".h5").exists():
         print(f"Downloading {url} to {path}. This may take a while.")
         urlretrieve(url, path)
         with zipfile.ZipFile(path, "r") as zip_ref:
