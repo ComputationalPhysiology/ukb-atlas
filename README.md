@@ -37,21 +37,25 @@ options:
 ```
 For example, by running the following command
 ```
-ukb-atlas data
+ukb-atlas data --mesh
 ```
 The tool will generate the following files
 ```
 data
 ├── AV_ED.stl
 ├── AV_ES.stl
+├── ED.msh
 ├── EPI_ED.stl
 ├── EPI_ES.stl
+├── ES.msh
 ├── LV_ED.stl
 ├── LV_ES.stl
 ├── MV_ED.stl
 ├── MV_ES.stl
 ├── PV_ED.stl
 ├── PV_ES.stl
+├── RVFW_ED.stl
+├── RVFW_ES.stl
 ├── RV_ED.stl
 ├── RV_ES.stl
 ├── TV_ED.stl

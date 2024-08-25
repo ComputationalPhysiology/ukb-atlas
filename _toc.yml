@@ -1,0 +1,10 @@
+format: jb-book
+root: README
+parts:
+  - caption: Demo
+    chapters:
+    - file: docs/demo_dolfinx.py
+  - caption: API documentation
+    chapters:
+    - file: CONTRIBUTING
+    - file: "docs/api.rst"

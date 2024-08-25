@@ -2,6 +2,7 @@ from __future__ import annotations
 import typing
 import json
 from pathlib import Path
+import logging
 import argparse
 
 from . import atlas, surface, mesh
@@ -48,14 +49,20 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--char_length_max",
         type=float,
-        default=1.0,
+        default=5.0,
         help="Maximum characteristic length of the mesh elements.",
     )
     parser.add_argument(
         "--char_length_min",
         type=float,
-        default=1.0,
+        default=5.0,
         help="Minimum characteristic length of the mesh elements.",
+    )
+    parser.add_argument(
+        "-v",
+        "--verbose",
+        action="store_true",
+        help="Print verbose output.",
     )
 
     return parser
@@ -64,6 +71,8 @@ def get_parser() -> argparse.ArgumentParser:
 def main(argv: typing.Sequence[str] | None = None) -> int:
     parser = get_parser()
     args = vars(parser.parse_args(argv))
+
+    logging.basicConfig(level=logging.DEBUG if args["verbose"] else logging.INFO)
 
     outdir = args["outdir"]
     outdir.mkdir(exist_ok=True, parents=True)
@@ -100,6 +109,7 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
                 char_length_max=args["char_length_max"],
                 char_length_min=args["char_length_min"],
                 case=case,
+                verbose=args["verbose"],
             )
 
     return 0

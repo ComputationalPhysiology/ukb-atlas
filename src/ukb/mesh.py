@@ -95,7 +95,25 @@ def create_mesh_geo(
     logger.debug("Finished running gmsh")
 
 
-def create_mesh(outdir: Path, char_length_max: float, char_length_min: float, case: str) -> None:
+def create_mesh(
+    outdir: Path, char_length_max: float, char_length_min: float, case: str, verbose: bool = False
+) -> None:
+    """Create a gmsh mesh file from the surface mesh representation.
+
+    Parameters
+    ----------
+    outdir : Path
+        Path to the output folder
+    char_length_max : float
+        Maximum characteristic length of the mesh elements
+    char_length_min : float
+        Minimum characteristic length of the mesh elements
+    case : str
+        Case name
+    verbose : bool, optional
+        Print verbose output, by default False
+    """
+    logger.info(f"Creating mesh for {case}")
     try:
         import gmsh
     except ImportError:
@@ -103,6 +121,8 @@ def create_mesh(outdir: Path, char_length_max: float, char_length_min: float, ca
         return create_mesh_geo(outdir, char_length_max, char_length_min, case)
 
     gmsh.initialize()
+    if not verbose:
+        gmsh.option.setNumber("General.Verbosity", 0)
     gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_length_max)
     gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_length_min)
     gmsh.option.setNumber("Mesh.Optimize", 1)
@@ -125,7 +145,6 @@ def create_mesh(outdir: Path, char_length_max: float, char_length_min: float, ca
     gmsh.model.geo.addSurfaceLoop([s[1] for s in surfaces], 1)
     vol = gmsh.model.geo.addVolume([1], 1)
     gmsh.model.geo.synchronize()
-    # breakpoint()
 
     physical_groups = {
         "LV": [1],
@@ -146,4 +165,5 @@ def create_mesh(outdir: Path, char_length_max: float, char_length_min: float, ca
     gmsh.model.geo.synchronize()
     gmsh.model.mesh.generate(3)
     gmsh.write(f"{outdir}/{case}.msh")
+    logger.info(f"Created mesh {outdir}/{case}.msh")
     gmsh.finalize()

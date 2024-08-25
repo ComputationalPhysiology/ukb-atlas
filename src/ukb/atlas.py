@@ -1,7 +1,10 @@
 from typing import NamedTuple
 from pathlib import Path
+import logging
 import h5py
 import numpy as np
+
+logger = logging.getLogger(__name__)
 
 
 class Points(NamedTuple):
@@ -23,7 +26,7 @@ def download_atlas(outdir: Path, all: bool = True) -> Path:
         If true, download the PCA atlas derived from all 4,329 subjects
         from the UK Biobank Study. If false, downlaod PCA atlas derived
         from 630 healthy reference subjects from the UK Biobank Study
-        (see [Petersen et al., 2017]_) by default False
+        (see [1]_) by default False
 
     Returns
     -------
@@ -33,9 +36,10 @@ def download_atlas(outdir: Path, all: bool = True) -> Path:
     References
     ----------
     .. [1] Petersen, Steffen E., et al. "Reference ranges for cardiac
-    structure and function using cardiovascular magnetic resonance
-    (CMR) in Caucasians from the UK Biobank population cohort.
-    " Journal of cardiovascular magnetic resonance 19.1 (2016): 18.
+        structure and function using cardiovascular magnetic resonance
+        (CMR) in Caucasians from the UK Biobank population cohort.
+        " Journal of cardiovascular magnetic resonance 19.1 (2016): 18.
+
     """
     from urllib.request import urlretrieve
     import zipfile
@@ -52,13 +56,13 @@ def download_atlas(outdir: Path, all: bool = True) -> Path:
         path = outdir / "UKBRVLV.zip"
 
     if not path.with_suffix(".h5").exists():
-        print(f"Downloading {url} to {path}. This may take a while.")
+        logger.info(f"Downloading {url} to {path}. This may take a while.")
         urlretrieve(url, path)
         with zipfile.ZipFile(path, "r") as zip_ref:
             zip_ref.extractall(outdir)
         path.unlink()
 
-        print("Done downloading.")
+        logger.info("Done downloading.")
 
     return path.with_suffix(".h5")
 
@@ -83,6 +87,7 @@ def generate_points(filename: Path, mode: int = -1, std: float = 1.5) -> Points:
         Named tuple containing the end-diastolic (ED) and end-systolic (ES)
         points.
     """
+    logger.info(f"Generating points from {filename} using mode {mode} and std {std}")
     with h5py.File(filename, "r") as hdf:
         mu = np.transpose(hdf["MU"])
         if mode == -1:

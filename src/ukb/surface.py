@@ -2,8 +2,10 @@ from __future__ import annotations
 from pathlib import Path
 import meshio
 import numpy as np
+import logging
 from typing import NamedTuple
 
+logger = logging.getLogger(__name__)
 here = Path(__file__).parent.absolute()
 
 connectivity_file = here / "connectivity.txt"
@@ -80,6 +82,7 @@ def get_mesh(faces, points, rows_to_keep) -> meshio.Mesh:
 
 
 def get_epi_mesh(points: np.ndarray) -> meshio.Mesh:
+    logger.debug("Getting EPI mesh")
     faces = connectivity[surfaces["EPI"].face_indices, :]
     triangle_should_be_removed = np.zeros(faces.shape[0], dtype=bool)
     for valve_name in ["MV", "AV", "TV", "PV"]:
@@ -98,6 +101,7 @@ def get_epi_mesh(points: np.ndarray) -> meshio.Mesh:
 
 
 def get_valve_mesh(surface_name: str, points: np.ndarray) -> meshio.Mesh:
+    logger.debug(f"Getting valve mesh for {surface_name}")
     faces = connectivity[surfaces[surface_name].face_indices, :]
     triangle_should_be_kept = np.zeros(faces.shape[0], dtype=bool)
 
@@ -116,19 +120,8 @@ def get_valve_mesh(surface_name: str, points: np.ndarray) -> meshio.Mesh:
 
 
 def get_chamber_mesh(surface_name: str, points: np.ndarray) -> meshio.Mesh:
+    logger.debug(f"Getting chamber mesh for {surface_name}")
     faces = connectivity[surfaces[surface_name].face_indices, :]
-    # triangle_should_be_removed = np.zeros(faces.shape[0], dtype=bool)
-    # for valve_name in ["MV", "AV", "TV", "PV"]:
-    #     for start, end in surfaces[valve_name].vertex_range:
-    #         triangle_should_be_removed |= np.any(
-    #             np.logical_and(
-    #                 faces > start,
-    #                 faces < end,
-    #             ),
-    #             axis=1,
-    #         )
-
     triangle_should_be_kept = np.ones(faces.shape[0], dtype=bool)
-    # triangle_should_be_kept = np.logical_not(triangle_should_be_removed)
     rows_to_keep = np.flatnonzero(triangle_should_be_kept)
     return get_mesh(faces, points, rows_to_keep)

@@ -25,6 +25,14 @@ dev = [
     "bump-my-version",
     "pre-commit",
 ]
+docs = [
+    "jupyter-book",
+    "jupytext",
+    "jupyter",
+    "pyvista[all]>=0.43.0",
+    "trame-vuetify",
+    "ipywidgets",
+]
 
 
 [tool.setuptools.packages.find]
