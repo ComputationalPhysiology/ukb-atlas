@@ -67,7 +67,7 @@ Which are surfaces for both the end diastolic (ED) and the end systolic (ES) sha
 
 ## Citing
 If you use this tool to create meshes please cite
-
+```
 @article{PANKEWITZ2024103091,
 title = {A universal biventricular coordinate system incorporating valve annuli: Validation in congenital heart disease},
 journal = {Medical Image Analysis},
@@ -80,6 +80,7 @@ url = {https://www.sciencedirect.com/science/article/pii/S1361841524000161},
 author = {Lisa R Pankewitz and Kristian G Hustad and Sachin Govil and James C Perry and Sanjeet Hegde and Renxiang Tang and Jeffrey H Omens and Alistair A Young and Andrew D McCulloch and Hermenegild J Arevalo},
 keywords = {Cardiac geometry, Coordinates, Congenital Heart Disease, Mapping},
 }
+```
 
 ## License
 MIT
