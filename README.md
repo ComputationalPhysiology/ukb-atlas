@@ -65,6 +65,21 @@ data
 ```
 Which are surfaces for both the end diastolic (ED) and the end systolic (ES) shapes, the PCA atlas (`UKBRVLV.h5`) and the parameters used to generate the surfaces.
 
+## Citing
+If you use this tool to create meshes please cite
+
+@article{PANKEWITZ2024103091,
+title = {A universal biventricular coordinate system incorporating valve annuli: Validation in congenital heart disease},
+journal = {Medical Image Analysis},
+volume = {93},
+pages = {103091},
+year = {2024},
+issn = {1361-8415},
+doi = {https://doi.org/10.1016/j.media.2024.103091},
+url = {https://www.sciencedirect.com/science/article/pii/S1361841524000161},
+author = {Lisa R Pankewitz and Kristian G Hustad and Sachin Govil and James C Perry and Sanjeet Hegde and Renxiang Tang and Jeffrey H Omens and Alistair A Young and Andrew D McCulloch and Hermenegild J Arevalo},
+keywords = {Cardiac geometry, Coordinates, Congenital Heart Disease, Mapping},
+}
 
 ## License
 MIT
