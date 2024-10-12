@@ -19,6 +19,12 @@ def get_parser() -> argparse.ArgumentParser:
         help="Directory to save the generated surfaces and meshes.",
     )
     parser.add_argument(
+        "--subdir",
+        type=Path,
+        default=None,
+        help="Directory to save the generated surfaces and meshes.",
+    )
+    parser.add_argument(
         "-a",
         "--all",
         action="store_true",
@@ -85,8 +91,11 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
         default=lambda o: str(o),
     )
 
-    unique_id = hashlib.md5(args_json.encode()).hexdigest()
-    outdir = main_outdir / unique_id
+    if args["subdir"]:
+        outdir = main_outdir / args["subdir"]
+    else:
+        unique_id = hashlib.md5(args_json.encode()).hexdigest()
+        outdir = main_outdir / unique_id
     outdir.mkdir(exist_ok=True, parents=True)
 
     (outdir / "parameters.json").write_text(args_json)
