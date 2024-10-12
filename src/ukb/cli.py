@@ -1,6 +1,7 @@
 from __future__ import annotations
 import typing
 import json
+import hashlib
 from pathlib import Path
 import logging
 import argparse
@@ -74,23 +75,30 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.DEBUG if args["verbose"] else logging.INFO)
 
-    outdir = args["outdir"]
-    outdir.mkdir(exist_ok=True, parents=True)
+    main_outdir = args["outdir"]
+    main_outdir.mkdir(exist_ok=True, parents=True)
 
-    (outdir / "parameters.json").write_text(
-        json.dumps(
-            args,
-            indent=4,
-            default=lambda o: str(o),
-        )
+    args_json = json.dumps(
+        args,
+        indent=4,
+        sort_keys=True,
+        default=lambda o: str(o),
     )
 
-    filename = atlas.download_atlas(outdir, args["all"])
+    unique_id = hashlib.md5(args_json.encode()).hexdigest()
+    outdir = main_outdir / unique_id
+    outdir.mkdir(exist_ok=True, parents=True)
+
+    (outdir / "parameters.json").write_text(args_json)
+
+    filename = atlas.download_atlas(main_outdir, args["all"])
 
     points = atlas.generate_points(filename=filename, mode=args["mode"], std=args["std"])
 
     for case in ["ED", "ES"]:
-        epi = surface.get_epi_mesh(points=getattr(points, case))
+        epi = surface.get_epi_mesh(
+            points=getattr(points, case),
+        )
         epi.write(str(outdir / f"EPI_{case}.stl"))
 
         for valve in ["MV", "AV", "TV", "PV"]:
@@ -99,7 +107,8 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
 
         for chamber in ["LV", "RV", "RVFW"]:
             chamber_mesh = surface.get_chamber_mesh(
-                surface_name=chamber, points=getattr(points, case)
+                surface_name=chamber,
+                points=getattr(points, case),
             )
             chamber_mesh.write(str(outdir / f"{chamber}_{case}.stl"))
 
