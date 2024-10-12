@@ -18,10 +18,10 @@ Merge "PV_{case}.stl";
 Merge "TV_{case}.stl";
 Coherence Mesh;
 
-// Mesh.Optimize = 1;
-// Mesh.OptimizeNetgen = 1;
+Mesh.Optimize = 1;
+Mesh.OptimizeNetgen = 1;
+Mesh.Smoothing = 1;
 
-// Mesh.Smoothing = 1;
 CreateTopology;
 
 // Create geometry for all curves and surfaces:
@@ -50,12 +50,12 @@ Mesh.CharacteristicLengthMin = {char_length_min};
 // Mesh.AngleToleranceFacetOverlap = 0.04;
 // Mesh.MeshSizeFromCurvature = 12;
 
-OptimizeMesh "Gmsh";
+// OptimizeMesh "Gmsh";
 // OptimizeNetgen 1;
 // Coherence Mesh;
 // Set a threshold for optimizing tetrahedra that have a quality below; default 0.3
-Mesh.OptimizeThreshold = 0.5;
-Mesh.AngleToleranceFacetOverlap = 0.04;
+// Mesh.OptimizeThreshold = 0.5;
+// Mesh.AngleToleranceFacetOverlap = 0.04;
 
 // 3D mesh algorithm (1: Delaunay, 3: Initial mesh only,
 // 4: Frontal, 7: MMG3D, 9: R-tree, 10: HXT); Default 1
@@ -89,7 +89,7 @@ def create_mesh_geo(
     mshfile = outdir / f"{case}.msh"
     logger.debug(f"Create mesh {mshfile} using gmsh")
     subprocess.run(
-        ["gmsh", geofile.name, "-3", "-o", mshfile.name],
+        ["gmsh", geofile.name, "-2", "-3", "-o", mshfile.name],
         cwd=outdir,
     )
     logger.debug("Finished running gmsh")
@@ -113,9 +113,10 @@ def create_mesh(
     verbose : bool, optional
         Print verbose output, by default False
     """
-    logger.info(f"Creating mesh for {case}")
+    logger.info(f"Creating mesh for {case} with {char_length_max=}, {char_length_min=}")
     try:
         import gmsh
+
     except ImportError:
         logger.warning("gmsh python API not installed. Try subprocess.")
         return create_mesh_geo(outdir, char_length_max, char_length_min, case)
@@ -123,11 +124,7 @@ def create_mesh(
     gmsh.initialize()
     if not verbose:
         gmsh.option.setNumber("General.Verbosity", 0)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_length_max)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_length_min)
-    gmsh.option.setNumber("Mesh.Optimize", 1)
-    gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
-    gmsh.option.setNumber("Mesh.Smoothing", 1)
+
     # Merge all surfaces
     gmsh.merge(f"{outdir}/LV_{case}.stl")
     gmsh.merge(f"{outdir}/RV_{case}.stl")
@@ -138,8 +135,8 @@ def create_mesh(
     gmsh.merge(f"{outdir}/TV_{case}.stl")
     gmsh.merge(f"{outdir}/EPI_{case}.stl")
     gmsh.model.mesh.removeDuplicateNodes()
-    gmsh.model.mesh.create_geometry()
     gmsh.model.mesh.create_topology()
+    gmsh.model.mesh.create_geometry()
     surfaces = gmsh.model.getEntities(2)
 
     gmsh.model.geo.addSurfaceLoop([s[1] for s in surfaces], 1)
@@ -161,6 +158,13 @@ def create_mesh(
 
     p = gmsh.model.addPhysicalGroup(3, [vol], 9)
     gmsh.model.setPhysicalName(3, p, "Wall")
+
+    gmsh.option.setNumber("Mesh.Optimize", 1)
+    gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
+    gmsh.option.setNumber("Mesh.Smoothing", 1)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_length_max)
+    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_length_min)
+    gmsh.option.setNumber("Mesh.Algorithm3D", 1)
 
     gmsh.model.geo.synchronize()
     gmsh.model.mesh.generate(3)
