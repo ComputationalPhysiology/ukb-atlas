@@ -7,9 +7,17 @@ Generate meshes using the UK Biobank atlas (https://www.cardiacatlas.org/biventr
 ## Install
 Install with `pip`
 ```
+python3 -m pip install ukb-atlas
+```
+or (latest version)
+```
 python3 -m pip install git+https://github.com/ComputationalPhysiology/ukb-atlas
 ```
-or with [`pipx`](https://github.com/pypa/pipx)
+or similarly with [`pipx`](https://github.com/pypa/pipx)
+```
+pipx install ukb-atlas
+```
+or (latest version)
 ```
 pipx install git+https://github.com/ComputationalPhysiology/ukb-atlas.git
 ```
