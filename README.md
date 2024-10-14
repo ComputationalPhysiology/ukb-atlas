@@ -2,7 +2,6 @@
 
 Generate meshes using the UK Biobank atlas (https://www.cardiacatlas.org/biventricular-modes/)
 
-
 ## Install
 Install with `pip`
 ```
@@ -67,6 +66,18 @@ Which are surfaces for both the end diastolic (ED) and the end systolic (ES) sha
 
 ## Citing
 If you use this tool to create meshes please cite
+```
+@software{Finsberg_fenics-beat_2024,
+author = {Henrik Finsberg and Lisa R Pankewitz},
+doi = {},
+title = {UK Biobank atlas - mesh generation},
+url = {https://github.com/ComputationalPhysiology/ukb-atlas},
+version = {0.1.0},
+year = {2024}
+}
+```
+
+The templates used to generate the meshes are described where developed as part of the following publication (so please cite this paper if you use the templates)
 ```
 @article{PANKEWITZ2024103091,
 title = {A universal biventricular coordinate system incorporating valve annuli: Validation in congenital heart disease},
