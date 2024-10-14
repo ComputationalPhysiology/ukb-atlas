@@ -1,3 +1,5 @@
+[![DOI](https://zenodo.org/badge/846706235.svg)](https://doi.org/10.5281/zenodo.13927883)
+
 # UK Biobank atlas - mesh generation
 
 Generate meshes using the UK Biobank atlas (https://www.cardiacatlas.org/biventricular-modes/)
@@ -69,7 +71,7 @@ If you use this tool to create meshes please cite
 ```
 @software{Finsberg_fenics-beat_2024,
 author = {Henrik Finsberg and Lisa R Pankewitz},
-doi = {},
+doi = {10.5281/zenodo.13927883},
 title = {UK Biobank atlas - mesh generation},
 url = {https://github.com/ComputationalPhysiology/ukb-atlas},
 version = {0.1.0},
