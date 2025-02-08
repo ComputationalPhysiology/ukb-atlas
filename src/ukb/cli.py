@@ -71,6 +71,13 @@ def get_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print verbose output.",
     )
+    parser.add_argument(
+        "-c",
+        "--case",
+        choices=["ED", "ES", "both"],
+        default="both",
+        help="Case to generate surfaces for.",
+    )
 
     return parser
 
@@ -104,7 +111,12 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
 
     points = atlas.generate_points(filename=filename, mode=args["mode"], std=args["std"])
 
-    for case in ["ED", "ES"]:
+    if args["case"] == "both":
+        cases = ["ED", "ES"]
+    else:
+        cases = [args["case"]]
+
+    for case in cases:
         epi = surface.get_epi_mesh(
             points=getattr(points, case),
         )

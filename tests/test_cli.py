@@ -4,14 +4,27 @@ import ukb.cli
 import ukb.surface
 
 
-def test_generate_surfaces_mean_healthy(tmp_path):
-    ukb.cli.main([str(tmp_path), "--subdir", "."])
+@pytest.mark.parametrize("case", ["ED", "ES", "both"])
+def test_generate_surfaces_mean_healthy(case, tmp_path):
+    ukb.cli.main([str(tmp_path), "--subdir", ".", "--case", case])
     assert (tmp_path / "UKBRVLV.h5").exists()
     assert (tmp_path / "parameters.json").exists()
+
+    if case == "both":
+        cases = ["ED", "ES"]
+        non_cases = []
+    else:
+        cases = [case]
+        non_cases = ["ED", "ES"]
+        non_cases.remove(case)
+
     for name in ukb.surface.surfaces:
-        for case in ["ED", "ES"]:
-            path = tmp_path / f"{name}_{case}.stl"
+        for case_ in cases:
+            path = tmp_path / f"{name}_{case_}.stl"
             assert path.exists()
+        for case_ in non_cases:
+            path = tmp_path / f"{name}_{case_}.stl"
+            assert not path.exists()
 
 
 def test_generate_surfaces_non_mean_healthy(tmp_path):
