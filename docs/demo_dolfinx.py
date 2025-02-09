@@ -11,11 +11,11 @@ import gmsh
 # First we try to generate the mean shape from the UK Biobank atlas
 
 folder = Path("data")
-subdir = "mean"
-subprocess.run(["ukb-atlas", str(folder), "--mesh", "--subdir", subdir])
+subdir = folder / "mean"
+subprocess.run(["ukb-atlas", str(subdir), "--mesh"])
 
 comm = MPI.COMM_WORLD
-msh_file = folder / subdir / "ED.msh"
+msh_file = subdir / "ED.msh"
 gmsh.initialize()
 gmsh.model.add("Mesh from file")
 gmsh.merge(str(msh_file))
@@ -51,13 +51,11 @@ else:
 
 
 # Now lets us perturb the mean shape with the second mode
-subdir = "mode_1"
-subprocess.run(
-    ["ukb-atlas", str(folder), "--mesh", "--mode", "1", "--std", "1.5", "--subdir", subdir]
-)
+subdir = folder / "mode_1"
+subprocess.run(["ukb-atlas", str(subdir), "--mesh", "--mode", "1", "--std", "1.5"])
 
 comm = MPI.COMM_WORLD
-msh_file = folder / subdir / "ED.msh"
+msh_file = subdir / "ED.msh"
 gmsh.initialize()
 gmsh.model.add("Mesh from file")
 gmsh.merge(str(msh_file))
