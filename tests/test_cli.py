@@ -6,8 +6,7 @@ import ukb.surface
 
 @pytest.mark.parametrize("case", ["ED", "ES", "both"])
 def test_generate_surfaces_mean_healthy(case, tmp_path):
-    ukb.cli.main([str(tmp_path), "--subdir", ".", "--case", case])
-    assert (tmp_path / "UKBRVLV.h5").exists()
+    ukb.cli.main([str(tmp_path), "--case", case])
     assert (tmp_path / "parameters.json").exists()
 
     if case == "both":
@@ -30,8 +29,8 @@ def test_generate_surfaces_mean_healthy(case, tmp_path):
 def test_generate_surfaces_non_mean_healthy(tmp_path):
     mode = 1
     std = 0.3
-    ukb.cli.main([str(tmp_path), "--mode", str(mode), "--std", str(std), "--subdir", "."])
-    assert (tmp_path / "UKBRVLV.h5").exists()
+    ukb.cli.main([str(tmp_path), "--mode", str(mode), "--std", str(std)])
+
     assert (tmp_path / "parameters.json").exists()
     params = json.loads((tmp_path / "parameters.json").read_text())
     assert params["mode"] == mode

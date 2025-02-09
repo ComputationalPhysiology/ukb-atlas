@@ -1,7 +1,7 @@
 from __future__ import annotations
 import typing
 import json
-import hashlib
+import os
 from pathlib import Path
 import logging
 import argparse
@@ -16,12 +16,6 @@ def get_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "outdir",
         type=Path,
-        help="Directory to save the generated surfaces and meshes.",
-    )
-    parser.add_argument(
-        "--subdir",
-        type=Path,
-        default=None,
         help="Directory to save the generated surfaces and meshes.",
     )
     parser.add_argument(
@@ -78,7 +72,16 @@ def get_parser() -> argparse.ArgumentParser:
         default="both",
         help="Case to generate surfaces for.",
     )
-
+    parser.add_argument(
+        "--cache-dir",
+        type=Path,
+        default=os.environ.get("UKB_CACHE_DIR", Path.home() / ".ukb"),
+        help=(
+            "Directory to save the downloaded atlas. "
+            "Can also be set with the UKB_CACHE_DIR environment variable. "
+            "By default ~/.ukb"
+        ),
+    )
     return parser
 
 
@@ -88,8 +91,8 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
 
     logging.basicConfig(level=logging.DEBUG if args["verbose"] else logging.INFO)
 
-    main_outdir = args["outdir"]
-    main_outdir.mkdir(exist_ok=True, parents=True)
+    outdir = args["outdir"]
+    outdir.mkdir(exist_ok=True, parents=True)
 
     args_json = json.dumps(
         args,
@@ -98,16 +101,12 @@ def main(argv: typing.Sequence[str] | None = None) -> int:
         default=lambda o: str(o),
     )
 
-    if args["subdir"]:
-        outdir = main_outdir / args["subdir"]
-    else:
-        unique_id = hashlib.md5(args_json.encode()).hexdigest()
-        outdir = main_outdir / unique_id
-    outdir.mkdir(exist_ok=True, parents=True)
+    cache_dir = args["cache_dir"]
+    cache_dir.mkdir(exist_ok=True, parents=True)
 
     (outdir / "parameters.json").write_text(args_json)
 
-    filename = atlas.download_atlas(main_outdir, args["all"])
+    filename = atlas.download_atlas(cache_dir, args["all"])
 
     points = atlas.generate_points(filename=filename, mode=args["mode"], std=args["std"])
 
