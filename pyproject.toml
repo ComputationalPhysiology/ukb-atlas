@@ -25,6 +25,9 @@ dev = [
     "bump-my-version",
     "pre-commit",
 ]
+pyvista = [
+    "pyvista",
+]
 docs = [
     "jupyter-book",
     "jupytext",
