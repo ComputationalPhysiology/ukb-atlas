@@ -52,6 +52,11 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
         action="store_true",
         help="Create a clipped mesh.",
     )
+    parser.add_argument(
+        "--hex",
+        action="store_true",
+        help="Create hexahedral mesh (create tetrahedral by default).",
+    )
 
 
 template = dedent(
@@ -154,6 +159,7 @@ def main(
     char_length_min: float = 5.0,
     verbose: bool = False,
     clipped: bool = False,
+    hex: bool = False,
 ) -> None:
     """Create a gmsh mesh file from the surface mesh representation.
 
@@ -171,6 +177,8 @@ def main(
         Print verbose output, by default False
     clipped : bool, optional
         Create a clipped mesh, by default False
+    hex : bool, optional
+        Create a hexahedral mesh, by default False
     """
     if clipped:
         return create_clipped_mesh(
@@ -178,6 +186,7 @@ def main(
             case=case,
             char_length_max=char_length_max,
             char_length_min=char_length_min,
+            hex=hex,
         )
     logger.info(f"Creating mesh for {case} with {char_length_max=}, {char_length_min=}")
     try:
@@ -205,6 +214,12 @@ def main(
     gmsh.model.mesh.create_geometry()
     surfaces = gmsh.model.getEntities(2)
 
+    # if hex:
+    #     logger.info("Creating hexahedral mesh")
+    #     gmsh.model.mesh.setRecombine(2, surfaces[0][1])
+    #     gmsh.model.geo.synchronize()
+    #     surfaces = gmsh.model.getEntities(2)
+
     gmsh.model.geo.addSurfaceLoop([s[1] for s in surfaces], 1)
     vol = gmsh.model.geo.addVolume([1], 1)
     gmsh.model.geo.synchronize()
@@ -225,12 +240,23 @@ def main(
     p = gmsh.model.addPhysicalGroup(3, [vol], 9)
     gmsh.model.setPhysicalName(3, p, "Wall")
 
+    # if hex:
+    #     logger.info("Creating hexahedral mesh")
+    #     gmsh.model.mesh.setRecombine(3, p)
     gmsh.option.setNumber("Mesh.Optimize", 1)
     gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
     gmsh.option.setNumber("Mesh.Smoothing", 1)
     gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_length_max)
     gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_length_min)
     gmsh.option.setNumber("Mesh.Algorithm3D", 1)
+
+    if hex:
+        logger.info("Creating hexahedral mesh")
+        gmsh.model.mesh.recombine()
+        gmsh.option.setNumber("Mesh.RecombineAll", 1)
+        gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 2)
+        gmsh.option.setNumber("Mesh.Recombine3DLevel", 1)
+        gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 1)
 
     gmsh.model.geo.synchronize()
     gmsh.model.mesh.generate(3)
@@ -245,6 +271,7 @@ def create_clipped_mesh(
     char_length_max: float = 5.0,
     char_length_min: float = 5.0,
     verbose: bool = False,
+    hex: bool = False,
 ) -> None:
     """Create a gmsh mesh file from the surface mesh representation.
 
@@ -260,6 +287,8 @@ def create_clipped_mesh(
         Minimum characteristic length of the mesh elements
     verbose : bool, optional
         Print verbose output, by default False
+    hex : bool, optional
+        Create a hexahedral mesh, by default False
     """
     logger.info(f"Creating clipped mesh for {case} with {char_length_max=}, {char_length_min=}")
     try:
@@ -314,6 +343,15 @@ def create_clipped_mesh(
     gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_length_max)
     gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_length_min)
     gmsh.option.setNumber("Mesh.Algorithm3D", 1)
+
+    if hex:
+        logger.info("Creating hexahedral mesh")
+        gmsh.model.mesh.recombine()
+        gmsh.option.setNumber("Mesh.RecombineAll", 1)
+        gmsh.option.setNumber("Mesh.SubdivisionAlgorithm", 2)
+        gmsh.option.setNumber("Mesh.Recombine3DLevel", 1)
+        gmsh.option.setNumber("Mesh.RecombinationAlgorithm", 1)
+
     gmsh.model.geo.synchronize()
     gmsh.model.mesh.generate(3)
     outfile = (folder / f"{case}_clipped").with_suffix(".msh")
