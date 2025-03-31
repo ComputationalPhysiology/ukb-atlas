@@ -23,7 +23,7 @@ jobs:
         python-version: ${{ matrix.python-version }}
     - name: Install libgl1-mesa-dev
       if: matrix.os == 'ubuntu-latest'
-      run: apt-get update && apt-get install -y libgl1-mesa-dev
+      run: sudo apt-get update && sudo apt-get install -y libgl1-mesa-dev
 
     - name: Install package
       run: |
