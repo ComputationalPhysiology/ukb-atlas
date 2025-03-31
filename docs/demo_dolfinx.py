@@ -1,8 +1,5 @@
 # # Example with dolfinx
 
-import sys
-
-sys.path.remove("/opt/homebrew/lib")
 import subprocess
 from pathlib import Path
 from mpi4py import MPI
