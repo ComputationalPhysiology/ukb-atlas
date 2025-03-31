@@ -63,6 +63,8 @@ def download_atlas(outdir: Path, all: bool = True) -> Path:
         path.unlink()
 
         logger.info("Done downloading.")
+    else:
+        logger.debug(f"File {path.with_suffix('.h5')} already exists. Skipping download.")
 
     return path.with_suffix(".h5")
 
