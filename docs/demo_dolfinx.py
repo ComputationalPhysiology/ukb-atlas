@@ -34,6 +34,15 @@ subprocess.run(["ls", str(folder)])
 
 subprocess.run(["ukb-atlas", "mesh", "--help"])
 
+# Note that this command uses `gmsh`, which is not part of the default dependencies so this needs to be installed. You can do this using either
+# ```
+# python3 -m pip install gmsh
+# ```
+# or use
+# ```
+# python3 -m pip install ukb-atlas[gmsh]
+# ```
+#
 # Now we will generate the mesh for the mean shape (let us pick the rest of the parameters as default)
 
 subprocess.run(["ukb-atlas", "mesh", str(folder)])

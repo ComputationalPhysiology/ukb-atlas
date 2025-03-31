@@ -20,6 +20,9 @@ ukb-atlas = "ukb.cli:main"
 test = [
     "pytest",
     "pytest-cov",
+    "pyvista",
+    "gmsh",
+
 ]
 dev = [
     "bump-my-version",
@@ -27,6 +30,9 @@ dev = [
 ]
 pyvista = [
     "pyvista",
+]
+gmsh = [
+    "gmsh",
 ]
 docs = [
     "jupyter-book",
