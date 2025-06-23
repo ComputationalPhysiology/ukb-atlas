@@ -7,7 +7,7 @@ version = "1.0.0"
 description = "Generate meshes from UK Biobank data"
 authors = [{name = "Henrik Finsberg", email = "henriknf@simula.no"}]
 license = {file = "LICENSE"}
-requires-python = ">= 3.9"
+requires-python = ">= 3.10"
 readme = "README.md"
 dependencies = [
     "h5py", "meshio", "numpy"
