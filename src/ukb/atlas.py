@@ -1,4 +1,4 @@
-from typing import NamedTuple
+from typing import Literal, NamedTuple, Protocol
 from pathlib import Path
 import logging
 import h5py
@@ -91,25 +91,94 @@ def generate_points(filename: Path, mode: int = -1, std: float = 1.5) -> Points:
     """
     logger.info(f"Generating points from {filename} using mode {mode} and std {std}")
     with h5py.File(filename, "r") as hdf:
-        mu = np.transpose(hdf["MU"])
-        if mode == -1:
-            S = mu
-        else:
-            if mode < 0 or mode >= hdf["COEFF"].shape[0]:
-                raise ValueError(
-                    f"Mode {mode} is out of bounds. Needs to be between "
-                    f"0 and {hdf['COEFF'].shape[0] - 1}"
-                )
-            eigenvalue = hdf["LATENT"][0, mode]
-            eigenvector = hdf["COEFF"][mode, :]
-            S = np.transpose(hdf["MU"]) + (std * np.sqrt(eigenvalue) * eigenvector)
+        S = compute_S(hdf, mode, std)
 
-        # First half is ED and second half is ES
-        N = S.shape[1] // 2
-        ed = np.reshape(S[0, :N], (-1, 3))
-        es = np.reshape(S[0, N:], (-1, 3))
+    # First half is ED and second half is ES
+    N = S.shape[1] // 2
+
+    ed = np.reshape(S[0, :N], (-1, 3))
+    es = np.reshape(S[0, N:], (-1, 3))
 
     return Points(
         ED=np.delete(ed, unwanted_nodes, axis=0),
         ES=np.delete(es, unwanted_nodes, axis=0),
     )
+
+
+def generate_points_burns(filename: Path, mode: int = -1, std: float = 1.5) -> Points:
+    """Generate points from the Burns atlas.
+
+    Parameters
+    ----------
+    filename : Path
+        Path to the Burns atlas file.
+    mode : int, optional
+        Mode to generate points from. If -1, generate points from the mean
+        shape. If between 0 and the number of modes, generate points from
+        the specified mode. By default -1
+    std : float, optional
+        Standard deviation to scale the mode by, by default 1.5
+
+    Returns
+    -------
+    Points
+        Named tuple containing the end-diastolic (ED) and end-systolic (ES)
+        points.
+    """
+    import scipy.io
+
+    data = scipy.io.loadmat(filename)
+
+    hdf = data["pca200"][0, 0]
+
+    logger.info(f"Generating points from {filename} using mode {mode} and std {std}")
+    S = compute_S(hdf, mode, std)
+
+    N = S.shape[0] // 2
+    ed = np.reshape(S[:N, 0], (-1, 3))
+    es = np.reshape(S[N:, 0], (-1, 3))
+
+    return Points(
+        ED=np.delete(ed, unwanted_nodes, axis=0),
+        ES=np.delete(es, unwanted_nodes, axis=0),
+    )
+
+
+class AtlasFile(Protocol):
+    def __getitem__(self, item: Literal["MU", "COEFF", "LATENT"]) -> np.ndarray: ...
+
+
+def compute_S(hdf: AtlasFile | h5py.File, mode: int = -1, std: float = 1.5) -> np.ndarray:
+    """Compute the shape matrix S from the PCA atlas.
+
+    Parameters
+    ----------
+    hdf : h5py.File
+        HDF5 file containing the PCA atlas.
+    mode : int, optional
+        Mode to generate points from. If -1, generate points from the mean
+        shape. If between 0 and the number of modes, generate points from
+        the specified mode. By default -1
+    std : float, optional
+        Standard deviation to scale the mode by, by default 1.5
+
+    Returns
+    -------
+    np.ndarray
+        Shape matrix S.
+    """
+
+    mu = np.transpose(hdf["MU"])
+    if mode == -1:
+        S = mu
+    else:
+        if mode < 0 or mode >= hdf["COEFF"].shape[0]:
+            raise ValueError(
+                f"Mode {mode} is out of bounds. Needs to be between "
+                f"0 and {hdf['COEFF'].shape[0] - 1}"
+            )
+        eigenvalue = hdf["LATENT"][0, mode]
+        eigenvector = hdf["COEFF"][mode, :]
+        S = np.transpose(hdf["MU"]) + (std * np.sqrt(eigenvalue) * eigenvector)
+
+    return S

@@ -4,6 +4,7 @@ parts:
   - caption: Demo
     chapters:
     - file: docs/demo_dolfinx.py
+    - file: docs/burns
   - caption: API documentation
     chapters:
     - file: CONTRIBUTING
