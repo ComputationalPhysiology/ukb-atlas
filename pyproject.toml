@@ -10,7 +10,7 @@ license = {file = "LICENSE"}
 requires-python = ">= 3.10"
 readme = "README.md"
 dependencies = [
-    "h5py", "meshio", "numpy"
+    "h5py", "meshio", "numpy", "scipy",
 ]
 
 [project.scripts]
