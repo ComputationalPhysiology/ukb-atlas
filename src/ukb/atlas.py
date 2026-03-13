@@ -15,7 +15,7 @@ class Points(NamedTuple):
 unwanted_nodes = (5630, 5655, 5696, 5729)
 
 
-def download_atlas(outdir: Path, all: bool = True) -> Path:
+def download_atlas(outdir: Path, all: bool = False) -> Path:
     """Download the UK Biobank atlas from the Cardiac Atlas Project.
 
     Parameters
@@ -74,7 +74,6 @@ def generate_points(
     mode: int = -1,
     std: float = 1.5,
     score: np.ndarray | None = None,
-    num_scores: int = 25,
 ) -> Points:
     """Generate points from the UK Biobank atlas.
 
@@ -91,9 +90,7 @@ def generate_points(
     score : np.ndarray | None, optional
         PCA scores to generate points from. If None, use the mode and std
         parameters to generate points. By default None
-    num_scores : int, optional
-        Number of PCA scores to use when generating points from the scores.
-        By default 25.
+
 
     Returns
     -------
@@ -103,7 +100,7 @@ def generate_points(
     """
     logger.info(f"Generating points from {filename} using mode {mode} and std {std}")
     with h5py.File(filename, "r") as hdf:
-        S = compute_S(hdf, mode, std, score, num_scores)
+        S = compute_S(hdf, mode, std, score)
 
     # First half is ED and second half is ES
     N = S.shape[1] // 2
@@ -122,7 +119,6 @@ def generate_points_burns(
     mode: int = -1,
     std: float = 1.5,
     score: np.ndarray | None = None,
-    num_scores: int = 25,
 ) -> Points:
     """Generate points from the Burns atlas.
 
@@ -139,9 +135,6 @@ def generate_points_burns(
     score : np.ndarray | None, optional
         PCA scores to generate points from. If None, use the mode and std
         parameters to generate points. By default None
-    num_scores : int, optional
-        Number of PCA scores to use when generating points from the scores.
-        By default 25.
 
     Returns
     -------
@@ -156,7 +149,7 @@ def generate_points_burns(
     hdf = data["pca200"][0, 0]
 
     logger.info(f"Generating points from {filename} using mode {mode} and std {std}")
-    S = compute_S(hdf, mode, std, score, num_scores)
+    S = compute_S(hdf, mode, std, score)
 
     N = S.shape[0] // 2
     ed = np.reshape(S[:N, 0], (-1, 3))
@@ -177,7 +170,6 @@ def compute_S(
     mode: int = -1,
     std: float = 1.5,
     score: np.ndarray | None = None,
-    num_scores: int = 25,
 ) -> np.ndarray:
     """Compute the shape matrix S from the PCA atlas.
 
@@ -194,18 +186,14 @@ def compute_S(
     score : np.ndarray | None, optional
         PCA scores to generate points from. If None, use the mode and std
         parameters to generate points. By default None
-    num_scores : int, optional
-        Number of PCA scores to use when generating points from the scores.
-        By default 25.
-
     Returns
     -------
     np.ndarray
         Shape matrix S.
     """
 
-    mu = np.transpose(hdf["MU"])
     if score is None:
+        mu = np.transpose(hdf["MU"])
         if mode == -1:
             S = mu
         else:
@@ -218,9 +206,7 @@ def compute_S(
             eigenvector = hdf["COEFF"][mode, :]
             S = np.transpose(hdf["MU"]) + (std * np.sqrt(eigenvalue) * eigenvector)
     else:
-        if score.shape[0] != num_scores:
-            raise ValueError(f"Score has {score.shape[0]} elements but num_scores is {num_scores}")
-
-        d = score * np.sqrt(hdf["LATENT"][0:num_scores]).T
-        S = mu + np.matmul(d, hdf["COEFF"][:, :num_scores].T)
+        num_scores = len(score)
+        d = score * np.sqrt(hdf["LATENT"][0, 0:num_scores]).T
+        S = (hdf["MU"] + np.matmul(d, hdf["COEFF"][:, :num_scores].T)).T
     return S
