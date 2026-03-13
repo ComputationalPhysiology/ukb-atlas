@@ -69,7 +69,13 @@ def download_atlas(outdir: Path, all: bool = True) -> Path:
     return path.with_suffix(".h5")
 
 
-def generate_points(filename: Path, mode: int = -1, std: float = 1.5) -> Points:
+def generate_points(
+    filename: Path,
+    mode: int = -1,
+    std: float = 1.5,
+    score: np.ndarray | None = None,
+    num_scores: int = 25,
+) -> Points:
     """Generate points from the UK Biobank atlas.
 
     Parameters
@@ -82,6 +88,12 @@ def generate_points(filename: Path, mode: int = -1, std: float = 1.5) -> Points:
         the specified mode. By default -1
     std : float, optional
         Standard deviation to scale the mode by, by default 1.5
+    score : np.ndarray | None, optional
+        PCA scores to generate points from. If None, use the mode and std
+        parameters to generate points. By default None
+    num_scores : int, optional
+        Number of PCA scores to use when generating points from the scores.
+        By default 25.
 
     Returns
     -------
@@ -91,7 +103,7 @@ def generate_points(filename: Path, mode: int = -1, std: float = 1.5) -> Points:
     """
     logger.info(f"Generating points from {filename} using mode {mode} and std {std}")
     with h5py.File(filename, "r") as hdf:
-        S = compute_S(hdf, mode, std)
+        S = compute_S(hdf, mode, std, score, num_scores)
 
     # First half is ED and second half is ES
     N = S.shape[1] // 2
@@ -105,7 +117,13 @@ def generate_points(filename: Path, mode: int = -1, std: float = 1.5) -> Points:
     )
 
 
-def generate_points_burns(filename: Path, mode: int = -1, std: float = 1.5) -> Points:
+def generate_points_burns(
+    filename: Path,
+    mode: int = -1,
+    std: float = 1.5,
+    score: np.ndarray | None = None,
+    num_scores: int = 25,
+) -> Points:
     """Generate points from the Burns atlas.
 
     Parameters
@@ -118,6 +136,12 @@ def generate_points_burns(filename: Path, mode: int = -1, std: float = 1.5) -> P
         the specified mode. By default -1
     std : float, optional
         Standard deviation to scale the mode by, by default 1.5
+    score : np.ndarray | None, optional
+        PCA scores to generate points from. If None, use the mode and std
+        parameters to generate points. By default None
+    num_scores : int, optional
+        Number of PCA scores to use when generating points from the scores.
+        By default 25.
 
     Returns
     -------
@@ -132,7 +156,7 @@ def generate_points_burns(filename: Path, mode: int = -1, std: float = 1.5) -> P
     hdf = data["pca200"][0, 0]
 
     logger.info(f"Generating points from {filename} using mode {mode} and std {std}")
-    S = compute_S(hdf, mode, std)
+    S = compute_S(hdf, mode, std, score, num_scores)
 
     N = S.shape[0] // 2
     ed = np.reshape(S[:N, 0], (-1, 3))
@@ -148,7 +172,13 @@ class AtlasFile(Protocol):
     def __getitem__(self, item: Literal["MU", "COEFF", "LATENT"]) -> np.ndarray: ...
 
 
-def compute_S(hdf: AtlasFile | h5py.File, mode: int = -1, std: float = 1.5) -> np.ndarray:
+def compute_S(
+    hdf: AtlasFile | h5py.File,
+    mode: int = -1,
+    std: float = 1.5,
+    score: np.ndarray | None = None,
+    num_scores: int = 25,
+) -> np.ndarray:
     """Compute the shape matrix S from the PCA atlas.
 
     Parameters
@@ -161,6 +191,12 @@ def compute_S(hdf: AtlasFile | h5py.File, mode: int = -1, std: float = 1.5) -> n
         the specified mode. By default -1
     std : float, optional
         Standard deviation to scale the mode by, by default 1.5
+    score : np.ndarray | None, optional
+        PCA scores to generate points from. If None, use the mode and std
+        parameters to generate points. By default None
+    num_scores : int, optional
+        Number of PCA scores to use when generating points from the scores.
+        By default 25.
 
     Returns
     -------
@@ -169,16 +205,22 @@ def compute_S(hdf: AtlasFile | h5py.File, mode: int = -1, std: float = 1.5) -> n
     """
 
     mu = np.transpose(hdf["MU"])
-    if mode == -1:
-        S = mu
+    if score is None:
+        if mode == -1:
+            S = mu
+        else:
+            if mode < 0 or mode >= hdf["COEFF"].shape[0]:
+                raise ValueError(
+                    f"Mode {mode} is out of bounds. Needs to be between "
+                    f"0 and {hdf['COEFF'].shape[0] - 1}"
+                )
+            eigenvalue = hdf["LATENT"][0, mode]
+            eigenvector = hdf["COEFF"][mode, :]
+            S = np.transpose(hdf["MU"]) + (std * np.sqrt(eigenvalue) * eigenvector)
     else:
-        if mode < 0 or mode >= hdf["COEFF"].shape[0]:
-            raise ValueError(
-                f"Mode {mode} is out of bounds. Needs to be between "
-                f"0 and {hdf['COEFF'].shape[0] - 1}"
-            )
-        eigenvalue = hdf["LATENT"][0, mode]
-        eigenvector = hdf["COEFF"][mode, :]
-        S = np.transpose(hdf["MU"]) + (std * np.sqrt(eigenvalue) * eigenvector)
+        if score.shape[0] != num_scores:
+            raise ValueError(f"Score has {score.shape[0]} elements but num_scores is {num_scores}")
 
+        d = score * np.sqrt(hdf["LATENT"][0:num_scores]).T
+        S = mu + np.matmul(d, hdf["COEFF"][:, :num_scores].T)
     return S
