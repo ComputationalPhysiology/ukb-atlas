@@ -97,6 +97,14 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
     )
 
 
+def default_origin() -> tuple[float, float, float]:
+    return -13.612554383622273, 18.55767189380559, 15.135103714006394
+
+
+def default_normal() -> tuple[float, float, float]:
+    return -0.7160843664428893, 0.544394641424108, 0.4368725838557541
+
+
 def main(
     folder: Path,
     case: Literal["ED", "ES", "both"] = "ED",
