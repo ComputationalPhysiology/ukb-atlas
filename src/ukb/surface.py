@@ -76,20 +76,23 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
         help="Case to generate surfaces for.",
     )
     parser.add_argument(
-        "--use-burns",
-        action="store_true",
-        help=("Use the atlas from Richard Burns to generate the surfaces. "),
-    )
-    parser.add_argument(
         "--burns-path",
         type=Path,
         default=None,
         help=(
             "Path to the burns atlas file. "
             "This will be a .mat file which will be loaded using scipy.io.loadmat. "
-            "This needs to be specified if --use-burns is set. "
         ),
     )
+
+
+def tolist(obj: np.ndarray | list) -> list:
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    elif isinstance(obj, list):
+        return obj
+    else:
+        raise ValueError(f"Object of type {type(obj)} cannot be converted to list.")
 
 
 def main(
@@ -100,9 +103,9 @@ def main(
     verbose: bool = False,
     cache_dir: Path = Path.home() / ".ukb",
     case: Literal["ED", "ES", "both"] = "ED",
-    use_burns: bool = False,
     burns_path: Path | None = None,
     custom_points: atlas.Points | None = None,
+    score: np.ndarray | None = None,
 ) -> None:
     """Main function to generate  surfas from the UK Biobank atlas.
 
@@ -127,12 +130,15 @@ def main(
         Directory to save the downloaded atlas.
     case : str
         Case to generate surfaces for.
-    use_burns : bool
-        If true, use the atlas from Richard Burns to generate the surfaces.
-        This will override the `all` parameter and use the burns atlas instead.
     burns_path : Path | None
         Path to the burns atlas file. This will be a .mat file which will be loaded
-        using scipy.io.loadmat. This needs to be specified if `use_burns`
+        using scipy.io.loadmat.
+    custom_points : atlas.Points | None
+        If not None, use these points instead of generating points from the atlas.
+    score : np.ndarray | None
+        If not None, use these scores to generate points from the atlas instead of
+        using the `mode` and `std` parameters. This will override the `mode` and
+        `std` parameters if provided.
 
     """
 
@@ -147,34 +153,40 @@ def main(
             "verbose": verbose,
             "cache_dir": str(cache_dir),
             "case": case,
-            "use_burns": use_burns,
             "burns_path": str(burns_path) if burns_path else None,
+            "custom_points": str(custom_points) if custom_points else None,
+            "score": tolist(score) if score is not None else None,
         },
         indent=4,
         sort_keys=True,
         default=lambda o: str(o),
     )
 
-    cache_dir.mkdir(exist_ok=True, parents=True)
     (folder / "parameters.json").write_text(args_json)
 
     if custom_points is not None:
         points = custom_points
 
     else:
-        if use_burns:
-            if burns_path is None:
-                raise ValueError("If --use-burns is set, --burns-path must be specified.")
+        if burns_path is not None:
+            if not burns_path.exists():
+                raise ValueError(f"Burns path {burns_path} does not exist.")
 
             points = atlas.generate_points_burns(
                 filename=burns_path,
                 mode=mode,
                 std=std,
+                score=score,
             )
         else:
+            cache_dir.mkdir(exist_ok=True, parents=True)
             filename = atlas.download_atlas(cache_dir, all=all)
 
-            points = atlas.generate_points(filename=filename, mode=mode, std=std)
+            points = atlas.generate_points(
+                filename=filename,
+                mode=mode,
+                std=std,
+            )
 
     if case == "both":
         cases = ["ED", "ES"]

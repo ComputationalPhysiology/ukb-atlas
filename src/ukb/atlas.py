@@ -1,6 +1,7 @@
 from typing import Literal, NamedTuple, Protocol
 from pathlib import Path
 import logging
+import scipy.io
 import h5py
 import numpy as np
 
@@ -73,7 +74,6 @@ def generate_points(
     filename: Path,
     mode: int = -1,
     std: float = 1.5,
-    score: np.ndarray | None = None,
 ) -> Points:
     """Generate points from the UK Biobank atlas.
 
@@ -87,10 +87,6 @@ def generate_points(
         the specified mode. By default -1
     std : float, optional
         Standard deviation to scale the mode by, by default 1.5
-    score : np.ndarray | None, optional
-        PCA scores to generate points from. If None, use the mode and std
-        parameters to generate points. By default None
-
 
     Returns
     -------
@@ -98,9 +94,9 @@ def generate_points(
         Named tuple containing the end-diastolic (ED) and end-systolic (ES)
         points.
     """
-    logger.info(f"Generating points from {filename} using mode {mode} and std {std}")
+    logger.info(f"Generating points from {filename}")
     with h5py.File(filename, "r") as hdf:
-        S = compute_S(hdf, mode, std, score)
+        S = compute_S(hdf, mode, std, score=None)
 
     # First half is ED and second half is ES
     N = S.shape[1] // 2
@@ -142,13 +138,12 @@ def generate_points_burns(
         Named tuple containing the end-diastolic (ED) and end-systolic (ES)
         points.
     """
-    import scipy.io
+    logger.info(f"Generating points from {filename} (Burns atlas)")
 
     data = scipy.io.loadmat(filename)
 
     hdf = data["pca200"][0, 0]
 
-    logger.info(f"Generating points from {filename} using mode {mode} and std {std}")
     S = compute_S(hdf, mode, std, score)
 
     N = S.shape[0] // 2
@@ -193,6 +188,7 @@ def compute_S(
     """
 
     if score is None:
+        logger.info(f"Using mode {mode} and std {std}")
         mu = np.transpose(hdf["MU"])
         if mode == -1:
             S = mu
@@ -207,6 +203,7 @@ def compute_S(
             S = np.transpose(hdf["MU"]) + (std * np.sqrt(eigenvalue) * eigenvector)
     else:
         num_scores = len(score)
-        d = score * np.sqrt(hdf["LATENT"][0, 0:num_scores]).T
+        d = score * np.sqrt(hdf["LATENT"][0:num_scores]).T
         S = (hdf["MU"] + np.matmul(d, hdf["COEFF"][:, :num_scores].T)).T
+
     return S
