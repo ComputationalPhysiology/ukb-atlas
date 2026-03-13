@@ -1,3 +1,4 @@
+from unittest.mock import patch
 import pytest
 import h5py
 import numpy as np
@@ -28,9 +29,19 @@ def test_generate_points_with_mode(atlas_path):
 def test_generate_points_with_scores(atlas_path):
     """Test generation using explicit PCA scores."""
     num_scores = 25
+    np.random.seed(0)  # For reproducibility
     scores = np.random.normal(0, 1, num_scores)
+    N = 34860  # Original number of nodes in the atlas before removing unwanted nodes
 
-    points = atlas.generate_points(atlas_path, score=scores)
+    with patch("scipy.io.loadmat") as mock_loadmat:
+        # Mock the loadmat to return a structure with the expected keys
+        hdf = {
+            "MU": np.zeros((1, N)),
+            "COEFF": np.random.rand(N, num_scores),
+            "LATENT": np.random.rand(num_scores, 1),
+        }
+        mock_loadmat.return_value = {"pca200": np.array([[hdf]])}
+        points = atlas.generate_points_burns(atlas_path, score=scores)
 
     assert points.ED.shape[1] == 3
     assert len(points.ED) > 0
