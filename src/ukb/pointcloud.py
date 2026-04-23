@@ -152,6 +152,7 @@ def main(
         Suffix for the output files. By default ``".tsv"`` (tab-separated).
         Can be changed to ``".csv"`` (comma-separated).
     """
+    assert suffix in {".tsv", ".csv"}, "Suffix must be either .tsv or .csv"
     folder = Path(folder)
     folder.mkdir(exist_ok=True, parents=True)
 
