@@ -4,7 +4,7 @@ from typing import Sequence
 import logging
 import argparse
 
-from . import surface, mesh, clip
+from . import surface, mesh, clip, pointcloud
 
 
 def get_parser() -> argparse.ArgumentParser:
@@ -37,6 +37,12 @@ def get_parser() -> argparse.ArgumentParser:
         formatter_class=argparse.ArgumentDefaultsHelpFormatter,
     )
     mesh.add_parser_arguments(mesh_parser)
+    points_parser = subparsers.add_parser(
+        "points",
+        help="Export labelled point clouds from the atlas",
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
+    )
+    pointcloud.add_parser_arguments(points_parser)
 
     return parser
 
@@ -61,6 +67,8 @@ def dispatch(parser: argparse.ArgumentParser, argv: Sequence[str] | None = None)
         clip.main(**args)
     elif command == "mesh":
         mesh.main(**args)
+    elif command == "points":
+        pointcloud.main(**args)
     else:
         parser.error(f"Unknown command {command}")
     return 0
