@@ -76,6 +76,16 @@ INFO:ukb.mesh:Created mesh data/ED_clipped.msh
 
 ![_](https://github.com/ComputationalPhysiology/ukb-atlas/blob/main/docs/_static/clipped.png)
 
+We can also export labelled point clouds directly from the atlas using the `points` command
+```
+$ ukb-atlas points data --mode -1 --std 1.5 --case both
+INFO:ukb.atlas:Generating points from /root/.ukb/UKBRVLV.h5
+INFO:ukb.atlas:Using mode -1 and std 1.5
+INFO:ukb.pointcloud:Saved data/ED_pointcloud.tsv
+INFO:ukb.pointcloud:Saved data/ES_pointcloud.tsv
+```
+This generates tab-separated files (`ED_pointcloud.tsv`, `ES_pointcloud.tsv`) with columns `x`, `y`, `z`, `label`, and `region` for each labelled point on the biventricular surface.
+
 ## Usage
 There are three main commands:
 1. `surf` - Extract surfaces from the atlas and save them in the specified directory as STL files
