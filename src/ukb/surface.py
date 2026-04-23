@@ -224,6 +224,25 @@ class Surface(NamedTuple):
         return np.concatenate([np.arange(start, end) for start, end in self.vertex_range])
 
     @property
+    def post_deletion_vertex_indices(self) -> np.ndarray:
+        """Vertex indices remapped into the post-deletion point array.
+
+        ``generate_points`` removes ``atlas.unwanted_nodes`` from the raw
+        coordinate array with ``np.delete``, which shifts every node whose
+        original index is greater than a deleted node.  ``vertex_range`` stores
+        *original* indices, so this property converts them to the indices that
+        are valid in the array returned by ``generate_points``.
+
+        Nodes that are themselves in ``unwanted_nodes`` are excluded.
+        """
+        original = self.vertex_indices
+        unwanted_sorted = np.array(sorted(atlas.unwanted_nodes))
+        mask = ~np.isin(original, atlas.unwanted_nodes)
+        valid = original[mask]
+        shifts = np.searchsorted(unwanted_sorted, valid, side="left")
+        return valid - shifts
+
+    @property
     def face_indices(self):
         return np.concatenate([np.arange(start, end) for start, end in self.face_range])
 
