@@ -138,3 +138,29 @@ def test_generate_surfaces_non_mean_healthy(tmp_path, atlas_path):
         for case in ["ED", "ES"]:
             path = tmp_path / f"{name}_{case}.stl"
             assert path.exists()
+
+
+@pytest.mark.parametrize("case", ["ED", "ES", "both"])
+@pytest.mark.parametrize("suffix", [".tsv", ".csv"])
+def test_pointcloud(tmp_path, atlas_path, suffix, case):
+    ukb.cli.main(
+        [
+            "points",
+            str(tmp_path),
+            "--mode",
+            "-1",
+            "--std",
+            "0.0",
+            "--case",
+            case,
+            "--cache-dir",
+            str(atlas_path.parent),
+            "--suffix",
+            suffix,
+        ]
+    )
+
+    cases = ["ED", "ES"] if case == "both" else [case]
+    for c in cases:
+        path = tmp_path / f"{c}_pointcloud{suffix}"
+        assert path.exists()
