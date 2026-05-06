@@ -74,6 +74,7 @@ def generate_points(
     filename: Path,
     mode: int = -1,
     std: float = 1.5,
+    score: np.ndarray | None = None,
 ) -> Points:
     """Generate points from the UK Biobank atlas.
 
@@ -87,6 +88,9 @@ def generate_points(
         the specified mode. By default -1
     std : float, optional
         Standard deviation to scale the mode by, by default 1.5
+    score : np.ndarray | None, optional
+        PCA scores to generate points from. If None, use the mode and std
+        parameters to generate points. By default None
 
     Returns
     -------
@@ -96,7 +100,7 @@ def generate_points(
     """
     logger.info(f"Generating points from {filename}")
     with h5py.File(filename, "r") as hdf:
-        S = compute_S(hdf, mode, std, score=None)
+        S = compute_S(hdf, mode, std, score=score)
 
     # First half is ED and second half is ES
     N = S.shape[1] // 2
@@ -203,7 +207,16 @@ def compute_S(
             S = np.transpose(hdf["MU"]) + (std * np.sqrt(eigenvalue) * eigenvector)
     else:
         num_scores = len(score)
-        d = score * np.sqrt(hdf["LATENT"][0:num_scores]).T
-        S = (hdf["MU"] + np.matmul(d, hdf["COEFF"][:, :num_scores].T)).T
+        latent = np.asarray(hdf["LATENT"]).flatten()[
+            :num_scores
+        ]  # works for (1, modes) and (modes, 1)
+        d = score * np.sqrt(latent)  # (num_scores,)
+        coeff = hdf["COEFF"]
+        if coeff.shape[0] == np.asarray(hdf["LATENT"]).size:  # ukb h5 format: COEFF is (modes, N)
+            eigvecs = coeff[:num_scores, :]  # (num_scores, N)
+        else:  # Burns format: COEFF is (N, modes)
+            eigvecs = coeff[:, :num_scores].T  # (num_scores, N)
+        mu = np.transpose(hdf["MU"])
+        S = mu + np.matmul(d, eigvecs).reshape(mu.shape)
 
     return S
