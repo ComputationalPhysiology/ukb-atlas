@@ -99,6 +99,23 @@ def test_generate_mesh(tmp_path, atlas_path):
     assert (tmp_path / "ED.msh").exists()
 
 
+def test_clipped_surfaces_are_triangulated(tmp_path, atlas_path):
+    """Clipped surfaces must contain only triangles.
+
+    VTK >= 9.7 emits quads along the cut plane, and gmsh's PLY reader only
+    ever reads three vertex indices per face -- it desyncs on binary files
+    with mixed face sizes and silently drops the fourth vertex in ASCII.
+    """
+    meshio = pytest.importorskip("meshio")
+    ukb.cli.main(["surf", str(tmp_path), "--case", "ED", "--cache-dir", str(atlas_path.parent)])
+    ukb.cli.main(["clip", str(tmp_path), "--case", "ED", "--smooth"])
+
+    for name in ["lv_clipped.ply", "rv_clipped.ply", "epi_clipped.ply"]:
+        mesh = meshio.read(tmp_path / name)
+        cell_types = {cell.type for cell in mesh.cells}
+        assert cell_types == {"triangle"}, f"{name} contains non-triangles: {cell_types}"
+
+
 def test_clip_mesh(tmp_path, atlas_path):
     ukb.cli.main(["surf", str(tmp_path), "--case", "ED", "--cache-dir", str(atlas_path.parent)])
     assert not (tmp_path / "lv_clipped.ply").exists()
