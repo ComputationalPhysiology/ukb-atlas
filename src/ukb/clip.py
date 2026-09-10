@@ -144,6 +144,10 @@ def main(
     smooth_relaxation : float, optional
         Relaxation factor to smooth the RV surface. The default is 0.1.
     """
+    # NOTE: clip() must be followed by triangulate(). VTK >= 9.7 emits quads
+    # along the cut plane, and gmsh's PLY reader reads only three vertex indices
+    # per face, so non-triangular faces desync the binary stream ("Wrong node
+    # index") and are silently truncated in ASCII.
     origin = [origin_x, origin_y, origin_z]
     normal = [normal_x, normal_y, normal_z]
 
@@ -162,7 +166,7 @@ def main(
     assert lvfname.exists(), f"File {lvfname} does not exist. Please check the path."
     logger.info(f"Reading {lvfname}")
     lv = pv.read(lvfname)
-    lv_clip = lv.clip(normal=normal, origin=origin, invert=True)
+    lv_clip = lv.clip(normal=normal, origin=origin, invert=True).triangulate()
     lv_clip.compute_normals(inplace=True, flip_normals=False)
     pv.save_meshio(folder / "lv_clipped.ply", lv_clip)
     logger.info(f"Saved {folder / 'lv_clipped.ply'}")
@@ -182,7 +186,7 @@ def main(
     if smooth:
         logger.info("Smoothing RV")
         rv = rv.smooth(n_iter=smooth_iter, relaxation_factor=smooth_relaxation)
-    rv_clip = rv.clip(normal=normal, origin=origin, invert=True)
+    rv_clip = rv.clip(normal=normal, origin=origin, invert=True).triangulate()
     rv_clip.compute_normals(inplace=True, flip_normals=False)
     logger.info(f"Saving {folder / 'rv_clipped.ply'}")
     pv.save_meshio(folder / "rv_clipped.ply", rv_clip)
@@ -191,7 +195,7 @@ def main(
     assert epi_fname.exists(), f"File {epi_fname} does not exist. Please check the path."
     logger.info(f"Reading {epi_fname}")
     epi = pv.read(epi_fname)
-    epi_clip = epi.clip(normal=normal, origin=origin, invert=True)
+    epi_clip = epi.clip(normal=normal, origin=origin, invert=True).triangulate()
     epi_clip.compute_normals(inplace=True, flip_normals=False)
     logger.info(f"Saving {folder / 'epi_clipped.ply'}")
     pv.save_meshio(folder / "epi_clipped.ply", epi_clip)

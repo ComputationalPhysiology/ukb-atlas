@@ -1,6 +1,7 @@
 from typing import Literal, NamedTuple, Protocol
 from pathlib import Path
 import logging
+import requests
 import scipy.io
 import h5py
 import numpy as np
@@ -42,7 +43,6 @@ def download_atlas(outdir: Path, all: bool = False) -> Path:
         " Journal of cardiovascular magnetic resonance 19.1 (2016): 18.
 
     """
-    from urllib.request import urlretrieve
     import zipfile
 
     outdir = Path(outdir)
@@ -58,7 +58,11 @@ def download_atlas(outdir: Path, all: bool = False) -> Path:
 
     if not path.with_suffix(".h5").exists():
         logger.info(f"Downloading {url} to {path}. This may take a while.")
-        urlretrieve(url, path)
+
+        response = requests.get(url)
+        response.raise_for_status()
+        with open(path, "wb") as f:
+            f.write(response.content)
         with zipfile.ZipFile(path, "r") as zip_ref:
             zip_ref.extractall(outdir)
         path.unlink()
