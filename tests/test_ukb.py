@@ -70,6 +70,36 @@ def test_compute_S_errors(atlas_path):
             atlas.compute_S(hdf, mode=999)
 
 
+@pytest.mark.parametrize("all", [False, True])
+def test_download_atlas_verifies_checksum(tmp_path, all):
+    """Test that a download with the expected checksum is moved into place."""
+    import hashlib
+
+    content = b"atlas"
+    name, _ = atlas.ATLAS_FILES[all]
+    sha256 = hashlib.sha256(content).hexdigest()
+    with (
+        patch("requests.get") as mock_get,
+        patch.dict(atlas.ATLAS_FILES, {all: (name, sha256)}),
+    ):
+        mock_get.return_value.__enter__.return_value.iter_content.return_value = [content]
+        path = atlas.download_atlas(tmp_path, all=all)
+
+    assert path == tmp_path / name
+    assert path.read_bytes() == content
+    assert list(tmp_path.iterdir()) == [path]
+
+
+def test_download_atlas_checksum_mismatch(tmp_path):
+    """Test that a corrupted download raises and leaves nothing in the cache."""
+    with patch("requests.get") as mock_get:
+        mock_get.return_value.__enter__.return_value.iter_content.return_value = [b"corrupted"]
+        with pytest.raises(RuntimeError, match="Checksum mismatch"):
+            atlas.download_atlas(tmp_path, all=False)
+
+    assert list(tmp_path.iterdir()) == []
+
+
 @pytest.mark.parametrize("case", ["ED", "ES", "both"])
 def test_generate_surfaces_mean_healthy(case, tmp_path, atlas_path):
     ukb.cli.main(["surf", str(tmp_path), "--case", case, "--cache-dir", str(atlas_path.parent)])
