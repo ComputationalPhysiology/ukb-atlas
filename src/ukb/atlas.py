@@ -16,6 +16,20 @@ class Points(NamedTuple):
 
 unwanted_nodes = (5630, 5655, 5696, 5729)
 
+# The atlas files are mirrored as assets on a GitHub release since the
+# original download links at cardiacatlas.org are no longer reliable.
+ATLAS_BASE_URL = "https://github.com/ComputationalPhysiology/ukb-atlas/releases/download/atlas-data"
+ATLAS_FILES = {
+    False: (
+        "UKBRVLV.h5",
+        "f6145755b5bf0fd43c2a26a5d20a14a30c32bb657a3ee61120ac1eecd06bef08",
+    ),
+    True: (
+        "UKBRVLV_ALL.h5",
+        "a116bbaeae7d31b42df5c7562bffd4bc81717d92f7868fd8c255828f4e3f98aa",
+    ),
+}
+
 
 def download_atlas(outdir: Path, all: bool = False) -> Path:
     """Download the UK Biobank atlas from the Cardiac Atlas Project.
@@ -43,35 +57,40 @@ def download_atlas(outdir: Path, all: bool = False) -> Path:
         " Journal of cardiovascular magnetic resonance 19.1 (2016): 18.
 
     """
-    import zipfile
+    import hashlib
 
     outdir = Path(outdir)
     outdir.mkdir(exist_ok=True)
 
-    if all:
-        url = "https://www.cardiacatlas.org/share/download.php?id=59&token=CUfi3eWV41LrIL6ZtlMf7bvHEkiiWpVu&download"
-        path = outdir / "UKBRVLV_ALL.zip"
-    else:
-        url = "https://www.cardiacatlas.org/share/download.php?id=60&token=AR3JSoaxJ9Ev9n8QAkvV4BHJUniyttqm&download"
+    name, sha256 = ATLAS_FILES[all]
+    url = f"{ATLAS_BASE_URL}/{name}"
+    path = outdir / name
 
-        path = outdir / "UKBRVLV.zip"
-
-    if not path.with_suffix(".h5").exists():
+    if not path.exists():
         logger.info(f"Downloading {url} to {path}. This may take a while.")
 
-        response = requests.get(url)
-        response.raise_for_status()
-        with open(path, "wb") as f:
-            f.write(response.content)
-        with zipfile.ZipFile(path, "r") as zip_ref:
-            zip_ref.extractall(outdir)
-        path.unlink()
+        # Download to a temporary file so an interrupted download is not cached
+        tmp_path = path.with_suffix(".h5.part")
+        digest = hashlib.sha256()
+        with requests.get(url, stream=True, timeout=60) as response:
+            response.raise_for_status()
+            with open(tmp_path, "wb") as f:
+                for chunk in response.iter_content(chunk_size=1 << 20):
+                    f.write(chunk)
+                    digest.update(chunk)
+
+        if digest.hexdigest() != sha256:
+            tmp_path.unlink()
+            raise RuntimeError(
+                f"Checksum mismatch for {url}: expected {sha256}, got {digest.hexdigest()}"
+            )
+        tmp_path.replace(path)
 
         logger.info("Done downloading.")
     else:
-        logger.debug(f"File {path.with_suffix('.h5')} already exists. Skipping download.")
+        logger.debug(f"File {path} already exists. Skipping download.")
 
-    return path.with_suffix(".h5")
+    return path
 
 
 def generate_points(
