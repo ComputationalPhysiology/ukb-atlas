@@ -165,6 +165,11 @@ def main(
         return
 
     files, _ = surface.read_manifest(folder, case)
+    missing = {"LV_ENDO", "RV_ENDO", "EPI"} - set(files)
+    if missing:
+        raise ValueError(
+            f"clip only supports the biv geometries, the surfaces in {folder} lack {missing}"
+        )
 
     def read(name: str):
         logger.info(f"Reading {', '.join(map(str, files[name]))}")

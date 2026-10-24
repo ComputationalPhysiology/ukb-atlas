@@ -71,13 +71,10 @@ CreateTopology;
 // Create geometry for all curves and surfaces:
 CreateGeometry;
 
-// Define the volume (assuming there is no hole)
-s() = Surface{{:}};
-Surface Loop(1) = s();
-Volume(1) = 1;
+// Define the volumes. Since we did not create any new surface, the surface
+// tags are the merge positions of the files
+{volumes}
 
-// Since we did not create any new surface, we can easily define physical groups
-// (would need to inspect the result of ClassifySurfaces otherwise):
 {physical}
 
 Mesh.CharacteristicLengthMax = {char_length_max};
@@ -103,23 +100,40 @@ Mesh.MshFileVersion = 2.2;
 )
 
 
-def geo_script(files: dict[str, list[Path]], char_length_max: float, char_length_min: float) -> str:
-    """Return a gmsh .geo script that meshes the volume enclosed by ``files``.
+def geo_script(
+    files: dict[str, list[Path]],
+    volumes: dict[str, list[str]],
+    char_length_max: float,
+    char_length_min: float,
+) -> str:
+    """Return a gmsh .geo script that meshes the volumes enclosed by ``files``.
 
     Each merged file becomes one surface whose tag is its (1-based) merge
-    position, which is used for the physical groups.
+    position, which is used for the volumes and the physical groups.
     """
     merges: list[str] = []
-    physical: list[str] = []
+    tags: dict[str, list[int]] = {}
     for name, paths in files.items():
-        tags = list(range(len(merges) + 1, len(merges) + len(paths) + 1))
+        tags[name] = list(range(len(merges) + 1, len(merges) + len(paths) + 1))
         merges.extend(f'Merge "{path.name}";' for path in paths)
+
+    def join(values) -> str:
+        return ", ".join(map(str, values))
+
+    geo_volumes: list[str] = []
+    physical: list[str] = []
+    for i, surfaces in enumerate(volumes.values(), start=1):
+        geo_volumes.append(f"Surface Loop({i}) = {{{join(t for s in surfaces for t in tags[s])}}};")
+        geo_volumes.append(f"Volume({i}) = {{{i}}};")
+    for name, surface_tags in tags.items():
         physical.append(
-            f'Physical Surface("{name}", {len(physical) + 1}) = {{{", ".join(map(str, tags))}}};'
+            f'Physical Surface("{name}", {len(physical) + 1}) = {{{join(surface_tags)}}};'
         )
-    physical.append(f'Physical Volume("Wall", {len(physical) + 1}) = {{1}};')
+    for i, name in enumerate(volumes, start=1):
+        physical.append(f'Physical Volume("{name}", {len(physical) + 1}) = {{{i}}};')
     return geo_template.format(
         merges="\n".join(merges),
+        volumes="\n".join(geo_volumes),
         physical="\n".join(physical),
         char_length_max=char_length_max,
         char_length_min=char_length_min,
@@ -145,10 +159,10 @@ def create_mesh_geo(
     case : str
         Case name, by default "ED"
     """
-    files, _ = surface.read_manifest(folder, case)
+    files, volumes = surface.read_manifest(folder, case)
     geofile = folder / f"{case}.geo"
     logger.debug(f"Writing {geofile}")
-    geofile.write_text(geo_script(files, char_length_max, char_length_min))
+    geofile.write_text(geo_script(files, volumes, char_length_max, char_length_min))
 
     mshfile = folder / f"{case}.msh"
     logger.debug(f"Create mesh {mshfile} using gmsh")
@@ -214,7 +228,7 @@ def main(
             char_length_max=char_length_max,
             char_length_min=char_length_min,
         )
-    files, _ = surface.read_manifest(folder, case)
+    files, volumes = surface.read_manifest(folder, case)
     logger.info(f"Creating mesh for {case} with {char_length_max=}, {char_length_min=}")
     try:
         import gmsh
@@ -246,16 +260,21 @@ def main(
                 "gmsh changed the surfaces while merging; physical groups would be wrong"
             )
 
-        loop = gmsh.model.geo.addSurfaceLoop([s[1] for s in surfaces])
-        vol = gmsh.model.geo.addVolume([loop])
+        # One volume per declared volume; volumes sharing a surface (e.g. the wall
+        # and a cavity sharing the endocardium) give a conforming mesh
+        volume_tags = {}
+        for name, volume_surfaces in volumes.items():
+            loop = gmsh.model.geo.addSurfaceLoop([t for s in volume_surfaces for t in tags[s]])
+            volume_tags[name] = gmsh.model.geo.addVolume([loop])
         gmsh.model.geo.synchronize()
 
         for name, surface_tags in tags.items():
             p = gmsh.model.addPhysicalGroup(2, surface_tags)
             gmsh.model.setPhysicalName(2, p, name)
 
-        p = gmsh.model.addPhysicalGroup(3, [vol])
-        gmsh.model.setPhysicalName(3, p, "Wall")
+        for name, volume_tag in volume_tags.items():
+            p = gmsh.model.addPhysicalGroup(3, [volume_tag])
+            gmsh.model.setPhysicalName(3, p, name)
 
         set_mesh_options(gmsh, char_length_max, char_length_min)
         gmsh.model.geo.synchronize()
