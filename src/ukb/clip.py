@@ -25,9 +25,9 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
     parser.add_argument(
         "-c",
         "--case",
-        choices=["ED", "ES", "both"],
+        choices=["ED", "ES"],
         default="ED",
-        help="Case to generate surfaces for.",
+        help="Case to clip the surfaces for.",
     )
     parser.add_argument(
         "-ox",
@@ -109,7 +109,7 @@ def default_normal() -> tuple[float, float, float]:
 
 def main(
     folder: Path,
-    case: Literal["ED", "ES", "both"] = "ED",
+    case: Literal["ED", "ES"] = "ED",
     origin_x: float = -13.612554383622273,
     origin_y: float = 18.55767189380559,
     origin_z: float = 15.135103714006394,
@@ -125,7 +125,7 @@ def main(
     ----------
     folder : Path
         Directory to save the generated surfaces.
-    case : Literal["ED", "ES", "both"], optional
+    case : Literal["ED", "ES"], optional
         Case to generate surfaces for. The default is "ED".
     origin_x : float, optional
         Origin of the clipping plane in x direction. The default is -13.612554383622273.

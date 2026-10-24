@@ -306,3 +306,30 @@ def test_get_point_cloud_labels():
         assert names[labels[t.centres[valve]]] == f"{valve}_CAP"
     assert all(names[label] == "RV_SEPTUM" for label in labels[t.insertion])
     assert all(names[label] == "LV_EPI" for label in labels[t.epi_seam])
+
+
+@pytest.mark.parametrize(
+    "num_nodes, message",
+    [(5806, "older versions"), (5352, "--all"), (100, "5810")],
+)
+def test_get_point_cloud_wrong_shape(num_nodes, message):
+    with pytest.raises(ValueError, match=message):
+        pointcloud.get_point_cloud(np.zeros((num_nodes, 3)))
+
+
+def test_custom_points_all_atlas_message(tmp_path):
+    points = atlas.Points(ED=np.zeros((5352, 3)), ES=np.zeros((5352, 3)))
+    with pytest.raises(ValueError, match="--all") as e:
+        ukb.surface.main(tmp_path, custom_points=points)
+    assert "older versions" not in str(e.value)
+
+
+def test_mesh_and_clip_case_both(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "--case", "both", "--cache-dir", str(atlas_path.parent)])
+    ukb.cli.main(["mesh", str(tmp_path), "--case", "both"])
+    assert (tmp_path / "ED.msh").exists()
+    assert (tmp_path / "ES.msh").exists()
+    with pytest.raises(ValueError, match="single case"):
+        ukb.cli.main(["mesh", str(tmp_path), "--case", "both", "--clipped"])
+    with pytest.raises(SystemExit):
+        ukb.cli.main(["clip", str(tmp_path), "--case", "both"])

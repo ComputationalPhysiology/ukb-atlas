@@ -188,14 +188,8 @@ def main(
     else:
         cases = [case]
 
-    num_nodes = template.load_template().num_nodes
     for c in cases:
-        if getattr(points, c).shape != (num_nodes, 3):
-            raise ValueError(
-                f"Expected {c} points of shape ({num_nodes}, 3), got {getattr(points, c).shape}. "
-                "Points with the valve centres removed (5806 nodes) from older versions are "
-                "not supported."
-            )
+        template.check_points(getattr(points, c), name=f"{c} points")
 
     geometry = "biv"
     recipe = RECIPES[geometry]

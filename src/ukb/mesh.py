@@ -201,6 +201,12 @@ def main(
     clipped : bool, optional
         Create a clipped mesh, by default False
     """
+    if case == "both":
+        if clipped:
+            raise ValueError("The clipped surfaces are for a single case; use --case ED or ES")
+        for c in ("ED", "ES"):
+            main(folder, c, char_length_max, char_length_min, verbose, clipped)
+        return
     if clipped:
         return create_clipped_mesh(
             folder=folder,

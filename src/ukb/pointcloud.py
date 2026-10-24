@@ -118,6 +118,7 @@ def get_point_cloud(
     label_names : dict[int, str]
         Mapping from integer label to region name.
     """
+    template.check_points(points)
     t = template.load_template()
     labels = np.zeros(len(points), dtype=int)
     # Assign in reverse so that higher priority regions overwrite lower ones

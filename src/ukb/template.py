@@ -242,6 +242,32 @@ def load_template() -> Template:
     )
 
 
+def check_points(points: np.ndarray, name: str = "points") -> None:
+    """Raise a ``ValueError`` unless ``points`` has one row per template node.
+
+    Parameters
+    ----------
+    points : np.ndarray
+        Node coordinates
+    name : str
+        Name of the points used in the error message
+    """
+    if points.shape == (NUM_NODES, 3):
+        return
+    msg = f"Expected {name} of shape ({NUM_NODES}, 3), got {points.shape}."
+    if len(points) == 5806:
+        msg += (
+            " Points with the valve centres removed (5806 nodes) from older versions are "
+            "not supported."
+        )
+    elif len(points) == 5352:
+        msg += (
+            " The atlas of all UK Biobank subjects (--all) has 5352 nodes and does not match "
+            "the biv-me template."
+        )
+    raise ValueError(msg)
+
+
 def extract(
     points: np.ndarray, regions: Iterable[str], template: Template | None = None
 ) -> meshio.Mesh:
