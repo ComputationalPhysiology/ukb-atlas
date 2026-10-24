@@ -63,7 +63,7 @@ geo_template = dedent(
 Coherence Mesh;
 
 Mesh.Optimize = 1;
-Mesh.OptimizeNetgen = 1;
+Mesh.OptimizeNetgen = {netgen};
 Mesh.Smoothing = 1;
 
 CreateTopology;
@@ -105,11 +105,13 @@ def geo_script(
     volumes: dict[str, list[str]],
     char_length_max: float,
     char_length_min: float,
+    netgen: bool = True,
 ) -> str:
     """Return a gmsh .geo script that meshes the volumes enclosed by ``files``.
 
     Each merged file becomes one surface whose tag is its (1-based) merge
-    position, which is used for the volumes and the physical groups.
+    position, which is used for the volumes and the physical groups. The
+    Netgen optimizer is only enabled if ``netgen`` is true.
     """
     merges: list[str] = []
     tags: dict[str, list[int]] = {}
@@ -137,7 +139,17 @@ def geo_script(
         physical="\n".join(physical),
         char_length_max=char_length_max,
         char_length_min=char_length_min,
+        netgen=int(netgen),
     )
+
+
+def gmsh_has_netgen() -> bool:
+    """Return whether the gmsh binary is built with the Netgen optimizer."""
+    try:
+        result = subprocess.run(["gmsh", "-info"], capture_output=True, text=True)
+    except FileNotFoundError:
+        return False
+    return "Netgen" in result.stdout + result.stderr
 
 
 def create_mesh_geo(
@@ -162,15 +174,24 @@ def create_mesh_geo(
     files, volumes = surface.read_manifest(folder, case)
     geofile = folder / f"{case}.geo"
     logger.debug(f"Writing {geofile}")
-    geofile.write_text(geo_script(files, volumes, char_length_max, char_length_min))
+    # Not all gmsh builds (e.g. some Linux distributions) include Netgen
+    netgen = gmsh_has_netgen()
+    if not netgen:
+        logger.warning("gmsh is built without Netgen, skipping Netgen optimization")
+    geofile.write_text(geo_script(files, volumes, char_length_max, char_length_min, netgen))
 
     mshfile = folder / f"{case}.msh"
     logger.debug(f"Create mesh {mshfile} using gmsh")
-    subprocess.run(
+    result = subprocess.run(
         ["gmsh", geofile.name, "-2", "-3", "-o", mshfile.name],
         cwd=folder,
+        capture_output=True,
+        text=True,
     )
-    logger.debug("Finished running gmsh")
+    logger.debug(result.stdout)
+    if result.returncode != 0:
+        raise RuntimeError(f"gmsh failed to create {mshfile}:\n{result.stdout}{result.stderr}")
+    logger.info(f"Created mesh {mshfile}")
 
 
 def set_mesh_options(gmsh, char_length_max: float, char_length_min: float) -> None:

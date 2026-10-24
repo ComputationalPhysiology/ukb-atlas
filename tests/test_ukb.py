@@ -1,4 +1,6 @@
 import json
+import shutil
+import subprocess
 from unittest.mock import patch
 
 import pytest
@@ -167,9 +169,10 @@ def test_mesh_without_manifest(tmp_path):
 
 def test_mesh_geo_fallback(tmp_path, atlas_path):
     ukb.cli.main(["surf", str(tmp_path), "--case", "ED", "--cache-dir", str(atlas_path.parent)])
-    with patch("subprocess.run") as mock_run:
+    with patch("subprocess.run", return_value=gmsh_result()) as mock_run:
         ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
-    mock_run.assert_called_once()
+    # gmsh -info and the meshing itself
+    assert mock_run.call_count == 2
     geo = (tmp_path / "ED.geo").read_text()
     assert 'Merge "LV_ENDO_ED.stl";' in geo
     assert 'Physical Surface("RV_ENDO", 2) = {2, 3};' in geo
@@ -395,7 +398,7 @@ def test_closed_wall_matches_open(tmp_path, atlas_path):
 
 def test_mesh_geo_fallback_volumes(tmp_path, atlas_path):
     ukb.cli.main(["surf", str(tmp_path), "-g", "biv-closed", "--cache-dir", str(atlas_path.parent)])
-    with patch("subprocess.run"):
+    with patch("subprocess.run", return_value=gmsh_result()):
         ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
     geo = (tmp_path / "ED.geo").read_text()
     assert geo.count("Surface Loop(") == 3
@@ -408,3 +411,54 @@ def test_clip_lv_raises(tmp_path, atlas_path):
     ukb.cli.main(["surf", str(tmp_path), "-g", "lv", "--cache-dir", str(atlas_path.parent)])
     with pytest.raises(ValueError, match="biv"):
         ukb.cli.main(["clip", str(tmp_path)])
+
+
+def gmsh_result(returncode=0, stdout="Build options : 64Bit Hxt Netgen Mesh"):
+    return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr="")
+
+
+@pytest.mark.parametrize(
+    "stdout, expected",
+    [("Build options : 64Bit Hxt Netgen Mesh", True), ("Build options : 64Bit Hxt Mesh", False)],
+)
+def test_gmsh_has_netgen(stdout, expected):
+    with patch("subprocess.run", return_value=gmsh_result(stdout=stdout)):
+        assert ukb.mesh.gmsh_has_netgen() is expected
+
+
+def test_gmsh_has_netgen_without_binary():
+    with patch("subprocess.run", side_effect=FileNotFoundError):
+        assert ukb.mesh.gmsh_has_netgen() is False
+
+
+@pytest.mark.parametrize("netgen", [True, False])
+def test_geo_script_netgen(tmp_path, netgen):
+    geo = ukb.mesh.geo_script({"S": [tmp_path / "S.stl"]}, {"Wall": ["S"]}, 5.0, 5.0, netgen=netgen)
+    assert f"Mesh.OptimizeNetgen = {int(netgen)};" in geo
+
+
+def test_mesh_geo_fallback_without_netgen(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
+    with patch("subprocess.run", return_value=gmsh_result(stdout="Build options : Hxt")):
+        ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
+    assert "Mesh.OptimizeNetgen = 0;" in (tmp_path / "ED.geo").read_text()
+
+
+def test_mesh_geo_fallback_gmsh_fails(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
+    with (
+        patch("subprocess.run", return_value=gmsh_result(returncode=1)),
+        pytest.raises(RuntimeError, match="gmsh"),
+    ):
+        ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
+
+
+@pytest.mark.skipif(shutil.which("gmsh") is None, reason="needs the gmsh binary")
+@pytest.mark.parametrize("geometry", ["lv", "biv-closed"])
+def test_mesh_geo_fallback_real_gmsh(tmp_path, atlas_path, geometry):
+    ukb.cli.main(["surf", str(tmp_path), "-g", geometry, "--cache-dir", str(atlas_path.parent)])
+    ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
+    recipe = ukb.surface.RECIPES[geometry]
+    assert physical_names(tmp_path / "ED.msh") == {(s, 2) for s in recipe.surfaces} | {
+        (v, 3) for v in recipe.volumes
+    }
