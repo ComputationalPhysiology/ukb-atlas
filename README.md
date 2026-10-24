@@ -83,6 +83,30 @@ volume `Wall`.
 
 ![_](https://github.com/ComputationalPhysiology/ukb-atlas/blob/main/docs/_static/clipped.png)
 
+### Geometries
+
+`surf` takes a `--geometry` (`-g`) option, and `mesh` builds whichever geometry `surf` wrote:
+
+| Geometry | Physical surfaces | Physical volumes |
+|---|---|---|
+| `biv` (default) | `LV_ENDO`, `RV_ENDO`, `EPI`, `MV`, `AV`, `TV`, `PV` | `Wall` |
+| `biv-closed` | as `biv`, plus `MV_CAP`, `AV_CAP`, `TV_CAP`, `PV_CAP` | `Wall`, `LV_CAVITY`, `RV_CAVITY` |
+| `lv` | `LV_ENDO`, `EPI`, `RV_SEPTUM`, `SEPTAL_BRIDGE`, `MV`, `AV` | `Wall` |
+| `lv-closed` | as `lv`, plus `MV_CAP`, `AV_CAP` | `Wall`, `LV_CAVITY` |
+
+`MV`, `AV`, `TV` and `PV` are the rims where the endocardium and epicardium meet at each valve. In
+the closed geometries each valve opening is also closed by a cap (`*_CAP`), so the LV
+(`LV_ENDO` + `MV_CAP` + `AV_CAP`) and RV (`RV_ENDO` + `TV_CAP` + `PV_CAP`) cavities are closed
+surfaces. The cavities are meshed as their own volumes, sharing nodes with the wall at the
+endocardium. The LV-only geometries keep the outflow tract; the LV wall is closed on the RV side by
+the RV septal surface (`RV_SEPTUM`) and a surface through the wall along the RV insertion
+(`SEPTAL_BRIDGE`), and its `EPI` is the LV epicardium only.
+```
+$ ukb-atlas surf data -g biv-closed
+$ ukb-atlas mesh data
+```
+`clip` only supports the `biv` geometries.
+
 We can also export labelled point clouds directly from the atlas using the `points` command
 ```
 $ ukb-atlas points data --mode -1 --std 1.5 --case both

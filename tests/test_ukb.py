@@ -11,7 +11,7 @@ import ukb.mesh
 from ukb import pointcloud, template
 from ukb import atlas
 
-BIV_REGIONS = [region for regions in ukb.surface.BIV.values() for region in regions]
+BIV_REGIONS = [region for regions in ukb.surface.BIV.surfaces.values() for region in regions]
 
 
 @pytest.fixture(scope="session")
@@ -119,7 +119,7 @@ def test_generate_surfaces_mean_healthy(case, tmp_path, atlas_path):
     assert manifest["geometry"] == "biv"
     assert set(manifest["cases"]) == set(cases)
     for case_ in cases:
-        assert set(manifest["cases"][case_]) == set(ukb.surface.BIV)
+        assert set(manifest["cases"][case_]) == set(ukb.surface.BIV.surfaces)
 
     for name in BIV_REGIONS:
         for case_ in cases:
@@ -277,7 +277,7 @@ def test_surf_ed_then_es_keeps_both_cases(tmp_path, atlas_path):
         ukb.cli.main(["surf", str(tmp_path), "--case", case, "--cache-dir", str(atlas_path.parent)])
     manifest = json.loads((tmp_path / ukb.surface.MANIFEST).read_text())
     assert set(manifest["cases"]) == {"ED", "ES"}
-    assert ukb.surface.read_manifest(tmp_path, "ES")["RV_ENDO"] == [
+    assert ukb.surface.read_manifest(tmp_path, "ES")[0]["RV_ENDO"] == [
         tmp_path / "RV_SEPTUM_ES.stl",
         tmp_path / "RV_FREEWALL_ES.stl",
     ]
@@ -344,3 +344,67 @@ def test_all_atlas_not_supported(tmp_path, command):
         ukb.cli.main([command, str(tmp_path / "out"), "--all"])
     mock_download.assert_not_called()
     assert not (tmp_path / "out").exists()
+
+
+def test_surf_geometry_lv_closed(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "-g", "lv-closed", "--cache-dir", str(atlas_path.parent)])
+    assert (tmp_path / "MV_CAP_ED.stl").exists()
+    assert (tmp_path / "SEPTAL_BRIDGE_ED.stl").exists()
+    assert not (tmp_path / "RV_FREEWALL_ED.stl").exists()
+    assert json.loads((tmp_path / "parameters.json").read_text())["geometry"] == "lv-closed"
+    manifest = json.loads((tmp_path / ukb.surface.MANIFEST).read_text())
+    assert manifest["geometry"] == "lv-closed"
+    assert set(manifest["volumes"]) == {"Wall", "LV_CAVITY"}
+
+
+def tet_volumes(path):
+    """Return physical volume name -> total tet volume."""
+    meshio = pytest.importorskip("meshio")
+    mesh = meshio.read(path)
+    names = {tag: name for name, (tag, dim) in mesh.field_data.items() if dim == 3}
+    tets = mesh.cells_dict["tetra"]
+    tags = mesh.cell_data_dict["gmsh:physical"]["tetra"]
+    p = mesh.points[tets]
+    vol = np.abs(
+        np.einsum("ij,ij->i", p[:, 1] - p[:, 0], np.cross(p[:, 2] - p[:, 0], p[:, 3] - p[:, 0]))
+    )
+    return {names[tag]: vol[tags == tag].sum() / 6 for tag in np.unique(tags)}
+
+
+@pytest.mark.parametrize("geometry", ["biv", "biv-closed", "lv", "lv-closed"])
+def test_mesh_geometry(tmp_path, atlas_path, geometry):
+    ukb.cli.main(["surf", str(tmp_path), "-g", geometry, "--cache-dir", str(atlas_path.parent)])
+    ukb.cli.main(["mesh", str(tmp_path), "--case", "ED"])
+    recipe = ukb.surface.RECIPES[geometry]
+    expected = {(s, 2) for s in recipe.surfaces} | {(v, 3) for v in recipe.volumes}
+    assert physical_names(tmp_path / "ED.msh") == expected
+    volumes = tet_volumes(tmp_path / "ED.msh")
+    assert set(volumes) == set(recipe.volumes)
+    assert all(v > 0 for v in volumes.values())
+
+
+def test_closed_wall_matches_open(tmp_path, atlas_path):
+    for geometry in ["biv", "biv-closed"]:
+        folder = tmp_path / geometry
+        ukb.cli.main(["surf", str(folder), "-g", geometry, "--cache-dir", str(atlas_path.parent)])
+        ukb.cli.main(["mesh", str(folder), "--case", "ED"])
+    open_wall = tet_volumes(tmp_path / "biv" / "ED.msh")["Wall"]
+    closed_wall = tet_volumes(tmp_path / "biv-closed" / "ED.msh")["Wall"]
+    assert closed_wall == pytest.approx(open_wall, rel=0.02)
+
+
+def test_mesh_geo_fallback_volumes(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "-g", "biv-closed", "--cache-dir", str(atlas_path.parent)])
+    with patch("subprocess.run"):
+        ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
+    geo = (tmp_path / "ED.geo").read_text()
+    assert geo.count("Surface Loop(") == 3
+    assert geo.count("Volume(") >= 3
+    assert 'Physical Volume("LV_CAVITY"' in geo
+    assert 'Physical Surface("MV_CAP"' in geo
+
+
+def test_clip_lv_raises(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "-g", "lv", "--cache-dir", str(atlas_path.parent)])
+    with pytest.raises(ValueError, match="biv"):
+        ukb.cli.main(["clip", str(tmp_path)])
