@@ -14,6 +14,13 @@ class Points(NamedTuple):
     ES: np.ndarray
 
 
+ALL_NOT_SUPPORTED = (
+    "The PCA atlas of all 4,329 UK Biobank subjects (--all) is not supported, and there is "
+    "no plan to support it in the near future. It uses a 5352-node version of the template "
+    "with the aortic and pulmonary outflow tracts removed, which does not match the 5810-node "
+    "biv-me template used to build the surfaces."
+)
+
 # The atlas files are mirrored as assets on a GitHub release since the
 # original download links at cardiacatlas.org are no longer reliable.
 ATLAS_BASE_URL = "https://github.com/ComputationalPhysiology/ukb-atlas/releases/download/atlas-data"

@@ -333,3 +333,14 @@ def test_mesh_and_clip_case_both(tmp_path, atlas_path):
         ukb.cli.main(["mesh", str(tmp_path), "--case", "both", "--clipped"])
     with pytest.raises(SystemExit):
         ukb.cli.main(["clip", str(tmp_path), "--case", "both"])
+
+
+@pytest.mark.parametrize("command", ["surf", "points"])
+def test_all_atlas_not_supported(tmp_path, command):
+    with (
+        patch("ukb.atlas.download_atlas") as mock_download,
+        pytest.raises(NotImplementedError, match="not supported"),
+    ):
+        ukb.cli.main([command, str(tmp_path / "out"), "--all"])
+    mock_download.assert_not_called()
+    assert not (tmp_path / "out").exists()

@@ -44,8 +44,9 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
         action="store_true",
         help=(
             "Use the PCA atlas derived from all 4,329 subjects from the UK "
-            "Biobank Study. By default we use the PCA atlas derived from 630 healthy "
-            "reference subjects from the UK Biobank Study"
+            "Biobank Study. Currently NOT supported (raises an error). By default we "
+            "use the PCA atlas derived from 630 healthy reference subjects from the "
+            "UK Biobank Study"
         ),
     )
     parser.add_argument(
@@ -150,7 +151,8 @@ def main(
     folder : Path
         Directory to save the generated point clouds.
     all : bool
-        If true, use the PCA atlas derived from all 4,329 subjects.
+        Use the PCA atlas derived from all 4,329 subjects. Not supported,
+        raises a ``NotImplementedError``.
     mode : int
         PCA mode to generate points from. -1 = mean shape.
     std : float
@@ -165,6 +167,8 @@ def main(
         Suffix for the output files. By default ``".tsv"`` (tab-separated).
         Can be changed to ``".csv"`` (comma-separated).
     """
+    if all:
+        raise NotImplementedError(atlas.ALL_NOT_SUPPORTED)
     assert suffix in {".tsv", ".csv"}, "Suffix must be either .tsv or .csv"
     folder = Path(folder)
     folder.mkdir(exist_ok=True, parents=True)

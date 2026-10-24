@@ -24,9 +24,10 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
         "--all",
         action="store_true",
         help=(
-            "Use the the PCA atlas derived from all 4,329 subjects from the UK "
-            "Biobank Study. By default we use the PCA atlas derived from 630 healthy "
-            "reference subjects from the UK Biobank Study"
+            "Use the PCA atlas derived from all 4,329 subjects from the UK "
+            "Biobank Study. Currently NOT supported (raises an error). By default we "
+            "use the PCA atlas derived from 630 healthy reference subjects from the "
+            "UK Biobank Study"
         ),
     )
     parser.add_argument(
@@ -109,10 +110,10 @@ def main(
     folder : Path
         Directory to save the generated points.
     all : bool
-        If true, download the PCA atlas derived from all 4,329 subjects
-        from the UK Biobank Study. If false, downlaod PCA atlas derived
-        from 630 healthy reference subjects from the UK Biobank Study
-        (see [1]_) by default False
+        Use the PCA atlas derived from all 4,329 subjects from the UK Biobank
+        Study. This is not supported and raises a ``NotImplementedError``. If
+        false (default), use the PCA atlas derived from 630 healthy reference
+        subjects from the UK Biobank Study (see [1]_)
     mode : int
         Mode to generate points from. If -1, generate points from the mean
         shape. If between 0 and the number of modes, generate points from
@@ -136,6 +137,9 @@ def main(
         `std` parameters if provided.
 
     """
+
+    if all:
+        raise NotImplementedError(atlas.ALL_NOT_SUPPORTED)
 
     folder.mkdir(exist_ok=True, parents=True)
 
