@@ -49,7 +49,7 @@ docs = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-ukb = ["connectivity.txt", "data/biv-me/*"]
+ukb = ["data/biv-me/*"]
 
 [tool.aliases]
 test = "pytest"

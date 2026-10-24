@@ -14,8 +14,6 @@ class Points(NamedTuple):
     ES: np.ndarray
 
 
-unwanted_nodes = (5630, 5655, 5696, 5729)
-
 # The atlas files are mirrored as assets on a GitHub release since the
 # original download links at cardiacatlas.org are no longer reliable.
 ATLAS_BASE_URL = "https://github.com/ComputationalPhysiology/ukb-atlas/releases/download/atlas-data"
@@ -132,8 +130,8 @@ def generate_points(
     es = np.reshape(S[0, N:], (-1, 3))
 
     return Points(
-        ED=np.delete(ed, unwanted_nodes, axis=0),
-        ES=np.delete(es, unwanted_nodes, axis=0),
+        ED=ed,
+        ES=es,
     )
 
 
@@ -178,8 +176,8 @@ def generate_points_burns(
     es = np.reshape(S[N:, 0], (-1, 3))
 
     return Points(
-        ED=np.delete(ed, unwanted_nodes, axis=0),
-        ES=np.delete(es, unwanted_nodes, axis=0),
+        ED=ed,
+        ES=es,
     )
 
 

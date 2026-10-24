@@ -7,6 +7,7 @@ import numpy as np
 
 import ukb.cli
 import ukb.surface
+from ukb import pointcloud, template
 from ukb import atlas
 
 
@@ -25,11 +26,9 @@ def test_generate_points_mean(atlas_path):
     points = atlas.generate_points(atlas_path, mode=-1)
 
     assert isinstance(points, atlas.Points)
-    assert points.ED.shape[1] == 3
-    assert points.ES.shape[1] == 3
-    # Check that unwanted nodes were removed
-    # (Original nodes count depends on the h5, but we ensure deletion happened)
-    assert len(points.ED) > 0
+    # All template nodes are kept, including the valve centres
+    assert points.ED.shape == (5810, 3)
+    assert points.ES.shape == (5810, 3)
 
 
 def test_generate_points_with_mode(atlas_path):
@@ -46,7 +45,7 @@ def test_generate_points_with_scores(atlas_path):
     num_scores = 25
     np.random.seed(0)  # For reproducibility
     scores = np.random.normal(0, 1, num_scores)
-    N = 34860  # Original number of nodes in the atlas before removing unwanted nodes
+    N = 34860  # 5810 nodes x 3 coordinates x 2 cases
 
     with patch("scipy.io.loadmat") as mock_loadmat:
         # Mock the loadmat to return a structure with the expected keys
@@ -58,8 +57,8 @@ def test_generate_points_with_scores(atlas_path):
         mock_loadmat.return_value = {"pca200": np.array([[hdf]])}
         points = atlas.generate_points_burns(atlas_path, score=scores)
 
-    assert points.ED.shape[1] == 3
-    assert len(points.ED) > 0
+    assert points.ED.shape == (5810, 3)
+    assert points.ES.shape == (5810, 3)
 
 
 def test_compute_S_errors(atlas_path):
@@ -113,7 +112,13 @@ def test_generate_surfaces_mean_healthy(case, tmp_path, atlas_path):
         non_cases = ["ED", "ES"]
         non_cases.remove(case)
 
-    for name in ukb.surface.surfaces:
+    manifest = json.loads((tmp_path / ukb.surface.MANIFEST).read_text())
+    assert manifest["geometry"] == "biv"
+    assert set(manifest["cases"]) == set(cases)
+    for case_ in cases:
+        assert set(manifest["cases"][case_]) == set(ukb.surface.BIV)
+
+    for name in ukb.surface.BIV:
         for case_ in cases:
             path = tmp_path / f"{name}_{case_}.stl"
             assert path.exists()
@@ -181,7 +186,7 @@ def test_generate_surfaces_non_mean_healthy(tmp_path, atlas_path):
     assert params["mode"] == mode
     assert params["std"] == std
 
-    for name in ukb.surface.surfaces:
+    for name in ukb.surface.BIV:
         for case in ["ED", "ES"]:
             path = tmp_path / f"{name}_{case}.stl"
             assert path.exists()
@@ -211,3 +216,41 @@ def test_pointcloud(tmp_path, atlas_path, suffix, case):
     for c in cases:
         path = tmp_path / f"{c}_pointcloud{suffix}"
         assert path.exists()
+        delimiter = "\t" if suffix == ".tsv" else ","
+        header, *rows = [line.split(delimiter) for line in path.read_text().splitlines()]
+        assert header == ["x", "y", "z", "label", "region"]
+        assert len(rows) == 5810
+        assert {row[4] for row in rows} <= set(pointcloud.LABELS)
+
+
+def test_surf_ed_then_es_keeps_both_cases(tmp_path, atlas_path):
+    for case in ["ED", "ES"]:
+        ukb.cli.main(["surf", str(tmp_path), "--case", case, "--cache-dir", str(atlas_path.parent)])
+    manifest = json.loads((tmp_path / ukb.surface.MANIFEST).read_text())
+    assert set(manifest["cases"]) == {"ED", "ES"}
+    assert ukb.surface.read_manifest(tmp_path, "ES")["LV_ENDO"] == tmp_path / "LV_ENDO_ES.stl"
+
+
+def test_read_manifest_missing(tmp_path):
+    with pytest.raises(FileNotFoundError, match="surf"):
+        ukb.surface.read_manifest(tmp_path, "ED")
+
+
+def test_custom_points_wrong_shape(tmp_path):
+    points = atlas.Points(ED=np.zeros((5806, 3)), ES=np.zeros((5806, 3)))
+    with pytest.raises(ValueError, match="5810"):
+        ukb.surface.main(tmp_path, custom_points=points)
+
+
+def test_get_point_cloud_labels():
+    t = template.load_template()
+    points = np.random.default_rng(0).random((5810, 3))
+    pts, labels, names = pointcloud.get_point_cloud(points)
+    assert np.array_equal(pts, points)
+    assert set(names.values()) == set(pointcloud.LABELS)
+    assert {names[label] for label in labels} == set(pointcloud.LABELS)
+    for valve in template.VALVES:
+        assert all(names[label] == valve for label in labels[t.rings[valve]])
+        assert names[labels[t.centres[valve]]] == f"{valve}_CAP"
+    assert all(names[label] == "RV_SEPTUM" for label in labels[t.insertion])
+    assert all(names[label] == "LV_EPI" for label in labels[t.epi_seam])

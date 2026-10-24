@@ -4,18 +4,13 @@ import os
 import json
 from argparse import ArgumentParser
 
-import meshio
 import numpy as np
 import logging
-from typing import NamedTuple, Literal
+from typing import Literal
 
-from . import atlas
+from . import atlas, template
 
 logger = logging.getLogger(__name__)
-here = Path(__file__).parent.absolute()
-
-connectivity_file = here / "connectivity.txt"
-connectivity = np.loadtxt(connectivity_file, dtype=int)
 
 
 def add_parser_arguments(parser: ArgumentParser) -> None:
@@ -193,156 +188,74 @@ def main(
     else:
         cases = [case]
 
+    num_nodes = template.load_template().num_nodes
     for c in cases:
-        epi = get_epi_mesh(
-            points=getattr(points, c),
-        )
-        epi.write(str(folder / f"EPI_{c}.stl"))
-        logger.info(f"Saved {folder / f'EPI_{c}.stl'}")
-
-        for valve in ["MV", "AV", "TV", "PV"]:
-            valve_mesh = get_valve_mesh(surface_name=valve, points=getattr(points, c))
-            valve_mesh.write(str(folder / f"{valve}_{c}.stl"))
-            logger.info(f"Saved {folder / f'{valve}_{c}.stl'}")
-
-        for chamber in ["LV", "RV", "RVFW"]:
-            chamber_mesh = get_chamber_mesh(
-                surface_name=chamber,
-                points=getattr(points, c),
+        if getattr(points, c).shape != (num_nodes, 3):
+            raise ValueError(
+                f"Expected {c} points of shape ({num_nodes}, 3), got {getattr(points, c).shape}. "
+                "Points with the valve centres removed (5806 nodes) from older versions are "
+                "not supported."
             )
-            chamber_mesh.write(str(folder / f"{chamber}_{c}.stl"))
-            logger.info(f"Saved {folder / f'{chamber}_{c}.stl'}")
+
+    geometry = "biv"
+    recipe = RECIPES[geometry]
+    files: dict[str, dict[str, str]] = {}
+    for c in cases:
+        files[c] = {}
+        for name, regions in recipe.items():
+            path = folder / f"{name}_{c}.stl"
+            template.extract(getattr(points, c), regions).write(str(path))
+            logger.info(f"Saved {path}")
+            files[c][name] = path.name
+
+    write_manifest(folder, geometry, files)
 
 
-class Surface(NamedTuple):
-    name: str
-    vertex_range: list[tuple[int, int]]
-    face_range: list[tuple[int, int]]
+# Output surface name -> template regions it is made of
+Recipe = dict[str, tuple[str, ...]]
 
-    @property
-    def vertex_indices(self):
-        return np.concatenate([np.arange(start, end) for start, end in self.vertex_range])
-
-    @property
-    def post_deletion_vertex_indices(self) -> np.ndarray:
-        """Vertex indices remapped into the post-deletion point array.
-
-        ``generate_points`` removes ``atlas.unwanted_nodes`` from the raw
-        coordinate array with ``np.delete``, which shifts every node whose
-        original index is greater than a deleted node.  ``vertex_range`` stores
-        *original* indices, so this property converts them to the indices that
-        are valid in the array returned by ``generate_points``.
-
-        Nodes that are themselves in ``unwanted_nodes`` are excluded.
-        """
-        original = self.vertex_indices
-        unwanted_sorted = np.array(sorted(atlas.unwanted_nodes))
-        mask = ~np.isin(original, atlas.unwanted_nodes)
-        valid = original[mask]
-        shifts = np.searchsorted(unwanted_sorted, valid, side="left")
-        return valid - shifts
-
-    @property
-    def face_indices(self):
-        return np.concatenate([np.arange(start, end) for start, end in self.face_range])
-
-
-# surfaces = {
-#     "LV": Surface("LV", [(0, 1500)], [(0, 3072)]),
-#     "RV": Surface(
-#         "RV",
-#         [(1500, 2165), (2165, 3224), (5729, 5806)],
-#         [(3072, 4480), (4480, 6752)],
-#     ),
-#     "EPI": Surface("Epi", [(3224, 5582)], [(6752, 11616)]),
-#     "MV": Surface("MV", [(5582, 5630)], [(6752, 11616)]),
-#     "AV": Surface("AV", [(5630, 5653)], [(6752, 11616)]),
-#     "TV": Surface("TV", [(5654, 5694)], [(6752, 11616)]),
-#     "PV": Surface("PV", [(5694, 5729)], [(6752, 11616)]),
-# }
-surfaces = {
-    "LV": Surface("LV", [(0, 1500)], [(0, 3072)]),
-    "RV": Surface(
-        "RV",
-        [(1500, 2165), (2165, 3224)],
-        [(3072, 4480)],
-    ),
-    "RVFW": Surface(
-        "RVFW",
-        [(5729, 5808)],
-        [(4480, 6752)],
-    ),
-    "EPI": Surface("Epi", [(3224, 5582)], [(6752, 11616)]),
-    "MV": Surface("MV", [(5582, 5629)], [(6752, 11616)]),
-    "AV": Surface("AV", [(5630, 5653)], [(6752, 11616)]),
-    "TV": Surface("TV", [(5654, 5693)], [(6752, 11616)]),
-    "PV": Surface("PV", [(5694, 5729)], [(6752, 11616)]),
+BIV: Recipe = {
+    "LV_ENDO": ("LV_ENDO",),
+    "RV_ENDO": ("RV_SEPTUM", "RV_FREEWALL"),
+    "EPI": ("LV_EPI", "RV_EPI"),
+    "MV": ("MV",),
+    "AV": ("AV",),
+    "TV": ("TV",),
+    "PV": ("PV",),
 }
+RECIPES: dict[str, Recipe] = {"biv": BIV}
+
+MANIFEST = "surfaces.json"
 
 
-def get_mesh(faces, points, rows_to_keep) -> meshio.Mesh:
-    triangle_data_local = faces[rows_to_keep]
+def write_manifest(folder: Path, geometry: str, files: dict[str, dict[str, str]]) -> None:
+    """Record which surface files were written for each case.
 
-    node_indices_that_we_need = np.unique(triangle_data_local)
-    node_data_local = points[node_indices_that_we_need, :]
-
-    node_id_map_original_to_local = {
-        original: local for local, original in enumerate(node_indices_that_we_need)
-    }
-
-    # now apply the mapping to the triangle_data
-    for i in range(triangle_data_local.shape[0]):
-        triangle_data_local[i, 0] = node_id_map_original_to_local[triangle_data_local[i, 0]]
-        triangle_data_local[i, 1] = node_id_map_original_to_local[triangle_data_local[i, 1]]
-        triangle_data_local[i, 2] = node_id_map_original_to_local[triangle_data_local[i, 2]]
-
-    # node_indices_that_we_need = np.unique(triangle_data_local)
-    # node_data_local = points[node_indices_that_we_need, :]
-
-    return meshio.Mesh(points=node_data_local, cells=[("triangle", triangle_data_local)])
+    Cases from an earlier run with the same geometry are kept, so that ED and ES
+    can be generated by separate calls.
+    """
+    path = folder / MANIFEST
+    cases: dict[str, dict[str, str]] = {}
+    if path.exists():
+        old = json.loads(path.read_text())
+        if old.get("geometry") == geometry:
+            cases = old["cases"]
+    cases.update(files)
+    path.write_text(json.dumps({"geometry": geometry, "cases": cases}, indent=4))
 
 
-def get_epi_mesh(points: np.ndarray) -> meshio.Mesh:
-    logger.debug("Getting EPI mesh")
-    faces = connectivity[surfaces["EPI"].face_indices, :]
-    triangle_should_be_removed = np.zeros(faces.shape[0], dtype=bool)
-    for valve_name in ["MV", "AV", "TV", "PV"]:
-        for start, end in surfaces[valve_name].vertex_range:
-            triangle_should_be_removed |= np.any(
-                np.logical_and(
-                    faces >= start,
-                    faces <= end,
-                ),
-                axis=1,
-            )
+def read_manifest(folder: Path, case: str) -> dict[str, Path]:
+    """Return surface name -> surface file for the given case.
 
-    triangle_should_be_kept = np.logical_not(triangle_should_be_removed)
-    rows_to_keep = np.flatnonzero(triangle_should_be_kept)
-    return get_mesh(faces, points, rows_to_keep)
-
-
-def get_valve_mesh(surface_name: str, points: np.ndarray) -> meshio.Mesh:
-    logger.debug(f"Getting valve mesh for {surface_name}")
-    faces = connectivity[surfaces[surface_name].face_indices, :]
-    triangle_should_be_kept = np.zeros(faces.shape[0], dtype=bool)
-
-    for start, end in surfaces[surface_name].vertex_range:
-        triangle_should_be_kept |= np.any(
-            np.logical_and(
-                faces >= start,
-                faces <= end,
-            ),
-            axis=1,
+    Raises
+    ------
+    FileNotFoundError
+        If no surfaces were generated for this case in ``folder``
+    """
+    path = Path(folder) / MANIFEST
+    cases = json.loads(path.read_text())["cases"] if path.exists() else {}
+    if case not in cases:
+        raise FileNotFoundError(
+            f"No surfaces for case {case} in {folder}. Run `ukb-atlas surf` first."
         )
-
-    rows_to_keep = np.flatnonzero(triangle_should_be_kept)
-
-    return get_mesh(faces, points, rows_to_keep)
-
-
-def get_chamber_mesh(surface_name: str, points: np.ndarray) -> meshio.Mesh:
-    logger.debug(f"Getting chamber mesh for {surface_name}")
-    faces = connectivity[surfaces[surface_name].face_indices, :]
-    triangle_should_be_kept = np.ones(faces.shape[0], dtype=bool)
-    rows_to_keep = np.flatnonzero(triangle_should_be_kept)
-    return get_mesh(faces, points, rows_to_keep)
+    return {name: Path(folder) / file for name, file in cases[case].items()}

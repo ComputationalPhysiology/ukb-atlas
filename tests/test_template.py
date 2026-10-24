@@ -90,20 +90,6 @@ def test_closed_cavities(regions):
     assert set(edge_counts(faces).values()) == {2}
 
 
-def test_matches_legacy_connectivity():
-    t = template.load_template()
-    legacy = np.loadtxt(Path(template.__file__).parent / "connectivity.txt", dtype=int)
-    raw = np.setdiff1d(np.arange(5810), [5630, 5655, 5696, 5729])[legacy]
-    caps = np.concatenate([t.regions[f"{v}_CAP"] for v in template.VALVES])
-    bridge = t.regions["SEPTAL_BRIDGE"]
-    keep = np.setdiff1d(np.arange(len(t.faces)), np.concatenate([caps, bridge]))
-    ours = t.faces[keep]
-    assert {tuple(sorted(f)) for f in ours} == {tuple(sorted(f)) for f in raw}
-    # Same orientation: each legacy triangle is a cyclic rotation of ours
-    rotations = {tuple(np.roll(f, i)) for f in ours for i in range(3)}
-    assert all(tuple(f) in rotations for f in raw)
-
-
 def test_corrupt_template_raises(tmp_path):
     sorted_file, materials_file, bridge_file = copy_template(tmp_path)
     # Replace the first triangle by a copy of the second one
