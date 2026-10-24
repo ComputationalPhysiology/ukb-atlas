@@ -7,8 +7,11 @@ import numpy as np
 
 import ukb.cli
 import ukb.surface
+import ukb.mesh
 from ukb import pointcloud, template
 from ukb import atlas
+
+BIV_REGIONS = [region for regions in ukb.surface.BIV.values() for region in regions]
 
 
 @pytest.fixture(scope="session")
@@ -118,7 +121,7 @@ def test_generate_surfaces_mean_healthy(case, tmp_path, atlas_path):
     for case_ in cases:
         assert set(manifest["cases"][case_]) == set(ukb.surface.BIV)
 
-    for name in ukb.surface.BIV:
+    for name in BIV_REGIONS:
         for case_ in cases:
             path = tmp_path / f"{name}_{case_}.stl"
             assert path.exists()
@@ -132,6 +135,45 @@ def test_generate_mesh(tmp_path, atlas_path):
     assert not (tmp_path / "ED.msh").exists()
     ukb.cli.main(["mesh", str(tmp_path), "--case", "ED"])
     assert (tmp_path / "ED.msh").exists()
+    assert physical_names(tmp_path / "ED.msh") == {
+        ("LV_ENDO", 2),
+        ("RV_ENDO", 2),
+        ("EPI", 2),
+        ("MV", 2),
+        ("AV", 2),
+        ("TV", 2),
+        ("PV", 2),
+        ("Wall", 3),
+    }
+
+
+def physical_names(path):
+    meshio = pytest.importorskip("meshio")
+    mesh = meshio.read(path)
+    return {(name, int(dim)) for name, (_, dim) in mesh.field_data.items()}
+
+
+def test_mesh_both_cases(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "--case", "both", "--cache-dir", str(atlas_path.parent)])
+    ukb.cli.main(["mesh", str(tmp_path), "--case", "ES"])
+    assert (tmp_path / "ES.msh").exists()
+    assert not (tmp_path / "ED.msh").exists()
+
+
+def test_mesh_without_manifest(tmp_path):
+    with pytest.raises(FileNotFoundError, match="surf"):
+        ukb.cli.main(["mesh", str(tmp_path), "--case", "ED"])
+
+
+def test_mesh_geo_fallback(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "--case", "ED", "--cache-dir", str(atlas_path.parent)])
+    with patch("subprocess.run") as mock_run:
+        ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
+    mock_run.assert_called_once()
+    geo = (tmp_path / "ED.geo").read_text()
+    assert 'Merge "LV_ENDO_ED.stl";' in geo
+    assert 'Physical Surface("RV_ENDO", 2) = {2, 3};' in geo
+    assert 'Physical Volume("Wall"' in geo
 
 
 def test_clipped_surfaces_are_triangulated(tmp_path, atlas_path):
@@ -161,6 +203,13 @@ def test_clip_mesh(tmp_path, atlas_path):
     assert not (tmp_path / "ED_clipped.msh").exists()
     ukb.cli.main(["mesh", str(tmp_path), "--case", "ED", "--clipped"])
     assert (tmp_path / "ED_clipped.msh").exists()
+    assert physical_names(tmp_path / "ED_clipped.msh") == {
+        ("LV_ENDO", 2),
+        ("RV_ENDO", 2),
+        ("EPI", 2),
+        ("BASE", 2),
+        ("Wall", 3),
+    }
 
 
 def test_generate_surfaces_non_mean_healthy(tmp_path, atlas_path):
@@ -186,7 +235,7 @@ def test_generate_surfaces_non_mean_healthy(tmp_path, atlas_path):
     assert params["mode"] == mode
     assert params["std"] == std
 
-    for name in ukb.surface.BIV:
+    for name in BIV_REGIONS:
         for case in ["ED", "ES"]:
             path = tmp_path / f"{name}_{case}.stl"
             assert path.exists()
@@ -228,7 +277,10 @@ def test_surf_ed_then_es_keeps_both_cases(tmp_path, atlas_path):
         ukb.cli.main(["surf", str(tmp_path), "--case", case, "--cache-dir", str(atlas_path.parent)])
     manifest = json.loads((tmp_path / ukb.surface.MANIFEST).read_text())
     assert set(manifest["cases"]) == {"ED", "ES"}
-    assert ukb.surface.read_manifest(tmp_path, "ES")["LV_ENDO"] == tmp_path / "LV_ENDO_ES.stl"
+    assert ukb.surface.read_manifest(tmp_path, "ES")["RV_ENDO"] == [
+        tmp_path / "RV_SEPTUM_ES.stl",
+        tmp_path / "RV_FREEWALL_ES.stl",
+    ]
 
 
 def test_read_manifest_missing(tmp_path):

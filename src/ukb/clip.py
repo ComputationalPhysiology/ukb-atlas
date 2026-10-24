@@ -3,6 +3,8 @@ from pathlib import Path
 from typing import Literal
 import logging
 
+from . import surface
+
 logger = logging.getLogger(__name__)
 
 
@@ -162,27 +164,19 @@ def main(
         logger.warning("pyvista not installed. Cannot crop surfaces.")
         return
 
-    lvfname = folder / f"LV_{case}.stl"
-    assert lvfname.exists(), f"File {lvfname} does not exist. Please check the path."
-    logger.info(f"Reading {lvfname}")
-    lv = pv.read(lvfname)
+    files = surface.read_manifest(folder, case)
+
+    def read(name: str):
+        logger.info(f"Reading {', '.join(map(str, files[name]))}")
+        return pv.merge([pv.read(path) for path in files[name]])
+
+    lv = read("LV_ENDO")
     lv_clip = lv.clip(normal=normal, origin=origin, invert=True).triangulate()
     lv_clip.compute_normals(inplace=True, flip_normals=False)
     pv.save_meshio(folder / "lv_clipped.ply", lv_clip)
     logger.info(f"Saved {folder / 'lv_clipped.ply'}")
 
-    rvfname = folder / f"RV_{case}.stl"
-    assert rvfname.exists(), f"File {rvfname} does not exist. Please check the path."
-    logger.info(f"Reading {rvfname}")
-    rv_sept = pv.read(rvfname)
-    rv_sept.compute_normals(inplace=True, flip_normals=False)
-
-    rv_fw_fname = folder / f"RVFW_{case}.stl"
-    assert rv_fw_fname.exists(), f"File {rv_fw_fname} does not exist. Please check the path."
-    logger.info(f"Reading {rv_fw_fname}")
-    rv_fw = pv.read(rv_fw_fname)
-    logger.info("Merging RV and RVFW")
-    rv = rv_sept + rv_fw
+    rv = read("RV_ENDO")
     if smooth:
         logger.info("Smoothing RV")
         rv = rv.smooth(n_iter=smooth_iter, relaxation_factor=smooth_relaxation)
@@ -191,94 +185,8 @@ def main(
     logger.info(f"Saving {folder / 'rv_clipped.ply'}")
     pv.save_meshio(folder / "rv_clipped.ply", rv_clip)
 
-    epi_fname = folder / f"EPI_{case}.stl"
-    assert epi_fname.exists(), f"File {epi_fname} does not exist. Please check the path."
-    logger.info(f"Reading {epi_fname}")
-    epi = pv.read(epi_fname)
+    epi = read("EPI")
     epi_clip = epi.clip(normal=normal, origin=origin, invert=True).triangulate()
     epi_clip.compute_normals(inplace=True, flip_normals=False)
     logger.info(f"Saving {folder / 'epi_clipped.ply'}")
     pv.save_meshio(folder / "epi_clipped.ply", epi_clip)
-
-
-def create_clipped_mesh(
-    folder: Path,
-    name: str = "clipped",
-    char_length_max: float = 5.0,
-    char_length_min: float = 5.0,
-    verbose: bool = False,
-) -> None:
-    """Create a gmsh mesh file from the surface mesh representation.
-
-    Parameters
-    ----------
-    folder : Path
-        Path to the output folde
-    name : str
-        Case name
-    char_length_max : float
-        Maximum characteristic length of the mesh elements
-    char_length_min : float
-        Minimum characteristic length of the mesh elements
-    verbose : bool, optional
-        Print verbose output, by default False
-    """
-    logger.info(f"Creating mesh for {name} with {char_length_max=}, {char_length_min=}")
-    try:
-        import gmsh
-
-    except ImportError:
-        logger.warning("gmsh python API not installed. Try subprocess.")
-        # return create_mesh_geo(folder, char_length_max, char_length_min, name)
-        raise
-    gmsh.initialize()
-    if not verbose:
-        gmsh.option.setNumber("General.Verbosity", 0)
-
-    # Merge all surfaces
-    gmsh.merge(f"{folder}/lv_clipped.ply")
-    gmsh.merge(f"{folder}/rv_clipped.ply")
-    gmsh.merge(f"{folder}/epi_clipped.ply")
-
-    gmsh.model.mesh.removeDuplicateNodes()
-    gmsh.model.mesh.create_topology()
-    gmsh.model.mesh.create_geometry()
-    surfaces = gmsh.model.getEntities(2)
-
-    # Create base plane
-    base_ring = gmsh.model.geo.addCurveLoop([s[1] for s in surfaces], 1)
-
-    gmsh.model.geo.addPlaneSurface([base_ring], 4)
-    gmsh.model.geo.synchronize()
-
-    surfaces = gmsh.model.getEntities(2)
-    gmsh.model.geo.addSurfaceLoop([s[1] for s in surfaces], 1)
-    vol = gmsh.model.geo.addVolume([1], 1)
-    gmsh.model.geo.synchronize()
-
-    gmsh.model.geo.synchronize()
-    physical_groups = {
-        "LV": [1],
-        "RV": [2],
-        "EPI": [3],
-        "BASE": [4],
-    }
-    for n, tag in physical_groups.items():
-        p = gmsh.model.addPhysicalGroup(2, tag)
-        gmsh.model.setPhysicalName(2, p, n)
-
-    p = gmsh.model.addPhysicalGroup(3, [vol], 4)
-    gmsh.model.setPhysicalName(3, p, "Wall")
-
-    gmsh.option.setNumber("Mesh.Optimize", 1)
-    gmsh.option.setNumber("Mesh.OptimizeNetgen", 1)
-    gmsh.option.setNumber("Mesh.Smoothing", 1)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_length_max)
-    gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_length_min)
-    gmsh.option.setNumber("Mesh.Algorithm3D", 1)
-    gmsh.model.geo.synchronize()
-    gmsh.model.mesh.generate(3)
-    outfile = (folder / f"{name}").with_suffix(".msh")
-    gmsh.write(str(outfile))
-    logger.info(f"Created mesh {outfile}")
-    gmsh.finalize()
