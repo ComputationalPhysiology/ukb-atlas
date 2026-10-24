@@ -7,7 +7,7 @@ version = "1.4.0"
 description = "Generate meshes from UK Biobank data"
 authors = [{name = "Henrik Finsberg", email = "henriknf@simula.no"}]
 license = {file = "LICENSE"}
-requires-python = ">= 3.10"
+requires-python = ">= 3.11"
 readme = "README.md"
 dependencies = [
     "h5py", "meshio", "numpy", "scipy", "requests",
@@ -49,7 +49,7 @@ docs = [
 where = ["src"]
 
 [tool.setuptools.package-data]
-ukb = ["connectivity.txt"]
+ukb = ["connectivity.txt", "data/biv-me/*"]
 
 [tool.aliases]
 test = "pytest"
@@ -94,7 +94,7 @@ exclude = [
 line-length = 100
 
 # Assume Python 3.10.
-target-version = "py310"
+target-version = "py311"
 
 [tool.ruff.lint]
 # Enable pycodestyle (`E`) and Pyflakes (`F`) codes by default.
