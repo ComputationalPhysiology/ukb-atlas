@@ -343,4 +343,6 @@ def read_manifest(folder: Path, case: str) -> tuple[dict[str, list[Path]], dict[
             f"No surfaces for case {case} in {folder}. Run `ukb-atlas surf` first."
         )
     files = {name: [Path(folder) / file for file in files] for name, files in cases[case].items()}
-    return files, manifest["volumes"]
+    # Manifests written by v1.5.0 do not record the volumes
+    volumes = manifest.get("volumes") or RECIPES[manifest["geometry"]].volumes
+    return files, {name: list(surfaces) for name, surfaces in volumes.items()}

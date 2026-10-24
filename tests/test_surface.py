@@ -62,3 +62,11 @@ def test_manifest_geometry_change_replaces_cases(tmp_path):
     files, volumes = surface.read_manifest(tmp_path, "ES")
     assert files == {"LV_ENDO": [tmp_path / "LV_ENDO_ES.stl"]}
     assert volumes == {name: list(s) for name, s in lv.volumes.items()}
+
+
+def test_read_manifest_without_volumes(tmp_path):
+    # Manifests written by v1.5.0 have no "volumes"
+    manifest = {"geometry": "biv", "cases": {"ED": {"LV_ENDO": ["LV_ENDO_ED.stl"]}}}
+    (tmp_path / surface.MANIFEST).write_text(json.dumps(manifest))
+    _, volumes = surface.read_manifest(tmp_path, "ED")
+    assert volumes == {name: list(s) for name, s in surface.BIV.volumes.items()}
