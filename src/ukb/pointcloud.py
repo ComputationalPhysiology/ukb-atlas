@@ -7,12 +7,29 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import Literal
 
-from . import atlas
-from .surface import surfaces
+from . import atlas, template
 
 import numpy as np
 
 logger = logging.getLogger(__name__)
+
+# Integer label of each template region in the point cloud. Nodes shared by
+# several regions get the label of the region listed first.
+LABELS = {
+    "MV": 1,
+    "AV": 2,
+    "TV": 3,
+    "PV": 4,
+    "LV_ENDO": 5,
+    "RV_SEPTUM": 6,
+    "RV_FREEWALL": 7,
+    "LV_EPI": 8,
+    "RV_EPI": 9,
+    "MV_CAP": 10,
+    "AV_CAP": 11,
+    "TV_CAP": 12,
+    "PV_CAP": 13,
+}
 
 
 def add_parser_arguments(parser: ArgumentParser) -> None:
@@ -27,8 +44,9 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
         action="store_true",
         help=(
             "Use the PCA atlas derived from all 4,329 subjects from the UK "
-            "Biobank Study. By default we use the PCA atlas derived from 630 healthy "
-            "reference subjects from the UK Biobank Study"
+            "Biobank Study. Currently NOT supported (raises an error). By default we "
+            "use the PCA atlas derived from 630 healthy reference subjects from the "
+            "UK Biobank Study"
         ),
     )
     parser.add_argument(
@@ -83,37 +101,33 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
 def get_point_cloud(
     points: np.ndarray,
 ) -> tuple[np.ndarray, np.ndarray, dict[int, str]]:
-    """Return a labelled point cloud from a post-deletion points array.
+    """Return a labelled point cloud.
 
     Parameters
     ----------
     points:
-        Array of shape ``(N, 3)`` as returned by
+        Array of shape ``(5810, 3)`` as returned by
         :func:`ukb.atlas.generate_points` (ED or ES field).
 
     Returns
     -------
-    points : np.ndarray, shape (M, 3)
-        Labelled points only (unlabelled nodes dropped).  ``M <= N``.
-    labels : np.ndarray, shape (M,), dtype int
-        Integer label for each point.  Labels start at ``1``; there is no
-        ``0`` entry in the returned array.
-        When a node falls in multiple surface regions the last entry in
-        :data:`surfaces` (in iteration order) wins.
+    points : np.ndarray, shape (5810, 3)
+        The points, unchanged.
+    labels : np.ndarray, shape (5810,), dtype int
+        Integer label for each point, see :data:`LABELS`. When a node belongs
+        to several regions the region listed first in :data:`LABELS` wins.
     label_names : dict[int, str]
-        Mapping from integer label to surface name.
+        Mapping from integer label to region name.
     """
+    template.check_points(points)
+    t = template.load_template()
     labels = np.zeros(len(points), dtype=int)
-    label_names: dict[int, str] = {}
+    # Assign in reverse so that higher priority regions overwrite lower ones
+    for name, label in reversed(LABELS.items()):
+        labels[np.unique(t.faces[t.regions[name]])] = label
 
-    for i, (name, surface) in enumerate(surfaces.items(), start=1):
-        label_names[i] = name
-        idx = surface.post_deletion_vertex_indices
-        idx = idx[idx < len(points)]
-        labels[idx] = i
-
-    keep = labels != 0
-    return points[keep], labels[keep], label_names
+    label_names = {label: name for name, label in LABELS.items()}
+    return points, labels, label_names
 
 
 def main(
@@ -137,7 +151,8 @@ def main(
     folder : Path
         Directory to save the generated point clouds.
     all : bool
-        If true, use the PCA atlas derived from all 4,329 subjects.
+        Use the PCA atlas derived from all 4,329 subjects. Not supported,
+        raises a ``NotImplementedError``.
     mode : int
         PCA mode to generate points from. -1 = mean shape.
     std : float
@@ -152,6 +167,8 @@ def main(
         Suffix for the output files. By default ``".tsv"`` (tab-separated).
         Can be changed to ``".csv"`` (comma-separated).
     """
+    if all:
+        raise NotImplementedError(atlas.ALL_NOT_SUPPORTED)
     assert suffix in {".tsv", ".csv"}, "Suffix must be either .tsv or .csv"
     folder = Path(folder)
     folder.mkdir(exist_ok=True, parents=True)

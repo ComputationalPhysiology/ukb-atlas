@@ -14,7 +14,12 @@ class Points(NamedTuple):
     ES: np.ndarray
 
 
-unwanted_nodes = (5630, 5655, 5696, 5729)
+ALL_NOT_SUPPORTED = (
+    "The PCA atlas of all 4,329 UK Biobank subjects (--all) is not supported, and there is "
+    "no plan to support it in the near future. It uses a 5352-node version of the template "
+    "with the aortic and pulmonary outflow tracts removed, which does not match the 5810-node "
+    "biv-me template used to build the surfaces."
+)
 
 # The atlas files are mirrored as assets on a GitHub release since the
 # original download links at cardiacatlas.org are no longer reliable.
@@ -132,8 +137,8 @@ def generate_points(
     es = np.reshape(S[0, N:], (-1, 3))
 
     return Points(
-        ED=np.delete(ed, unwanted_nodes, axis=0),
-        ES=np.delete(es, unwanted_nodes, axis=0),
+        ED=ed,
+        ES=es,
     )
 
 
@@ -178,8 +183,8 @@ def generate_points_burns(
     es = np.reshape(S[N:, 0], (-1, 3))
 
     return Points(
-        ED=np.delete(ed, unwanted_nodes, axis=0),
-        ES=np.delete(es, unwanted_nodes, axis=0),
+        ED=ed,
+        ES=es,
     )
 
 

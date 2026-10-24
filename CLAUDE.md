@@ -28,6 +28,8 @@ bump-my-version bump patch                # version lives only in pyproject.toml
 
 Tests download the real ~30 MB atlas once per session via the `atlas_path` session fixture, so the
 first run needs network access. `UKB_CACHE_DIR` (default `~/.ukb`) controls where the atlas is cached.
+CI (`.github/workflows/main.yml`) installs only the `test` extra and, on Ubuntu, the system `gmsh`
+binary and `libgl1-mesa-dev` (needed by pyvista).
 
 ## Architecture
 
@@ -36,35 +38,51 @@ shared `folder`, so stages can be run and re-run independently:
 
 ```
 atlas.py  →  surface.py   →  clip.py      →  mesh.py
-(PCA h5)     *_ED.stl        *_clipped.ply    ED.msh / ED_clipped.msh
+(PCA h5)     *_ED.stl +      *_clipped.ply    ED.msh / ED_clipped.msh
+             surfaces.json
              pointcloud.py → ED_pointcloud.tsv
 ```
 
-- **`atlas.py`** — downloads and caches the atlas, then reconstructs coordinates from the PCA
-  decomposition in `compute_S`: mean `MU`, or `MU + std*sqrt(LATENT[mode])*COEFF[mode]`, or a full
-  score vector. It handles two on-disk layouts: the UKB `.h5` (`COEFF` is `(modes, N)`) and the Burns
+- **`atlas.py`** — downloads the atlas from the `atlas-data` GitHub release of this repo (the
+  cardiacatlas.org links are broken), streaming to a `.part` file and checking it against the
+  SHA-256 in `ATLAS_FILES` before moving it into the cache — replacing a release asset means
+  updating that hash. It then reconstructs coordinates from the PCA decomposition in `compute_S`:
+  mean `MU`, or `MU + std*sqrt(LATENT[mode])*COEFF[mode]`, or a full score vector.
+  It handles two on-disk layouts: the UKB `.h5` (`COEFF` is `(modes, N)`) and the Burns
   `.mat` (`COEFF` is `(N, modes)`, loaded through `scipy.io.loadmat`, nested under `pca200`) —
   `compute_S` distinguishes them by comparing `COEFF.shape[0]` against `LATENT.size`. The returned
-  `Points` NamedTuple splits the flat vector in half: first half ED, second half ES.
-- **`surface.py`** — the geometry definition. `connectivity.txt` (11616 triangles, shipped as package
-  data) is a fixed triangulation of the atlas template; the `surfaces` dict maps each anatomical
-  region (LV, RV, RVFW, EPI, MV, AV, TV, PV) to explicit vertex- and face-index ranges into that
-  template. Surfaces are extracted by slicing those ranges and remapping to local node numbering.
-  EPI is the exception: it is built by *removing* triangles that touch any valve vertex.
-- **`pointcloud.py`** — labels each node by which `surfaces` entry contains it and writes TSV/CSV.
-- **`clip.py` / `mesh.py`** — clip cuts the outflow tracts with a pyvista plane (hard-coded default
-  origin/normal), merging RV+RVFW first; mesh merges the surfaces in gmsh, builds a volume, and
-  tags physical groups. The clipped path adds a `BASE` plane surface closing the cut.
+  `Points` NamedTuple splits the flat vector in half: first half ED, second half ES. Both arrays
+  have all 5810 template nodes (the `--all` UKB atlas has 5352 nodes and does not fit the template).
+- **`template.py`** — the geometry definition. The triangulation and per-triangle region labels
+  come from the biv-me template files vendored verbatim in `src/ukb/data/biv-me/` (Apache-2.0,
+  provenance in the README there; excluded from pre-commit so they stay byte-identical).
+  `load_template()` (cached) validates the files and returns a `Template`: `faces`, `regions`
+  (region name → face rows; `LV_ENDO, RV_SEPTUM, RV_FREEWALL, LV_EPI, RV_EPI`, valve rims
+  `MV/AV/TV/PV`, valve caps `*_CAP` fanned to the valve centre nodes, and `SEPTAL_BRIDGE` joining
+  the RV insertion line to the LV/RV epicardial seam), plus `rings`, `centres`, `insertion`,
+  `epi_seam`. `extract(points, regions)` returns one compacted triangle mesh.
+- **`surface.py`** — a *recipe* (`BIV` in `RECIPES`) maps each mesh surface name to template
+  regions. `surf` writes one STL per region (`{REGION}_{case}.stl`) and a `surfaces.json` manifest
+  mapping surface name → files per case; `read_manifest` is how later stages find them. Regions are
+  kept in separate files on purpose: gmsh fails to mesh the volume when the RV septum and free wall
+  are one surface. New geometries (LV-only, closed valves) should be new recipes.
+- **`pointcloud.py`** — labels every node by template region with the fixed integer mapping
+  `LABELS` (first entry wins for shared nodes) and writes TSV/CSV.
+- **`clip.py` / `mesh.py`** — clip merges each surface's files, cuts the outflow tracts with a
+  pyvista plane (hard-coded default origin/normal); mesh merges the manifest's files in gmsh, builds
+  a volume, and names physical groups after the manifest's surfaces (`Wall` for the volume). The
+  clipped path adds a `BASE` plane surface closing the cut. Mesh paths always `gmsh.finalize()` —
+  a leaked gmsh session corrupts later meshes in the same process (e.g. in tests).
 
-### Index bookkeeping (the main correctness trap)
+### Node numbering
 
-`generate_points` deletes `atlas.unwanted_nodes = (5630, 5655, 5696, 5729)` from the raw coordinate
-array, which shifts every later node index. The ranges in `surfaces` are *original* indices, valid
-against `connectivity.txt`. Anything indexing into the array returned by `generate_points` must go
-through `Surface.post_deletion_vertex_indices`, which applies the shift. Getting this wrong silently
-mislabels regions rather than raising.
+All indices are raw atlas node indices (0–5809); nothing is deleted or shifted. The four valve
+centres (MV 5630, AV 5655, TV 5696, PV 5729) are only used by the cap regions.
 
 ### CLI convention
+
+Subcommand names differ from module names: `surf` → `surface.py`, `points` → `pointcloud.py`
+(`clip` and `mesh` match).
 
 `cli.py` owns only the subparser wiring. Each of `surface`, `clip`, `mesh`, `pointcloud` exposes
 `add_parser_arguments(parser)` and `main(**kwargs)`; `dispatch` parses argv into a dict, pops
@@ -84,6 +102,6 @@ this lazy-import pattern — importing either at module scope breaks installs wi
 
 ## Conventions
 
-- ruff: line length 100, target py310, rules `E`/`F`. Python floor is 3.10; CI matrix runs 3.10 and
-  3.14 on Linux/macOS/Windows, so avoid newer syntax and use `from __future__ import annotations`.
+- ruff: line length 100, target py311, rules `E`/`F`. Python floor is 3.11; use
+  `from __future__ import annotations`.
 - numpydoc-style docstrings; module-level `logger = logging.getLogger(__name__)` for all user output.
