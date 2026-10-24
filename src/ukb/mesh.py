@@ -145,7 +145,7 @@ def create_mesh_geo(
     case : str
         Case name, by default "ED"
     """
-    files = surface.read_manifest(folder, case)
+    files, _ = surface.read_manifest(folder, case)
     geofile = folder / f"{case}.geo"
     logger.debug(f"Writing {geofile}")
     geofile.write_text(geo_script(files, char_length_max, char_length_min))
@@ -214,7 +214,7 @@ def main(
             char_length_max=char_length_max,
             char_length_min=char_length_min,
         )
-    files = surface.read_manifest(folder, case)
+    files, _ = surface.read_manifest(folder, case)
     logger.info(f"Creating mesh for {case} with {char_length_max=}, {char_length_min=}")
     try:
         import gmsh

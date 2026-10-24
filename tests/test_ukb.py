@@ -11,7 +11,7 @@ import ukb.mesh
 from ukb import pointcloud, template
 from ukb import atlas
 
-BIV_REGIONS = [region for regions in ukb.surface.BIV.values() for region in regions]
+BIV_REGIONS = [region for regions in ukb.surface.BIV.surfaces.values() for region in regions]
 
 
 @pytest.fixture(scope="session")
@@ -119,7 +119,7 @@ def test_generate_surfaces_mean_healthy(case, tmp_path, atlas_path):
     assert manifest["geometry"] == "biv"
     assert set(manifest["cases"]) == set(cases)
     for case_ in cases:
-        assert set(manifest["cases"][case_]) == set(ukb.surface.BIV)
+        assert set(manifest["cases"][case_]) == set(ukb.surface.BIV.surfaces)
 
     for name in BIV_REGIONS:
         for case_ in cases:
@@ -277,7 +277,7 @@ def test_surf_ed_then_es_keeps_both_cases(tmp_path, atlas_path):
         ukb.cli.main(["surf", str(tmp_path), "--case", case, "--cache-dir", str(atlas_path.parent)])
     manifest = json.loads((tmp_path / ukb.surface.MANIFEST).read_text())
     assert set(manifest["cases"]) == {"ED", "ES"}
-    assert ukb.surface.read_manifest(tmp_path, "ES")["RV_ENDO"] == [
+    assert ukb.surface.read_manifest(tmp_path, "ES")[0]["RV_ENDO"] == [
         tmp_path / "RV_SEPTUM_ES.stl",
         tmp_path / "RV_FREEWALL_ES.stl",
     ]
@@ -344,3 +344,14 @@ def test_all_atlas_not_supported(tmp_path, command):
         ukb.cli.main([command, str(tmp_path / "out"), "--all"])
     mock_download.assert_not_called()
     assert not (tmp_path / "out").exists()
+
+
+def test_surf_geometry_lv_closed(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "-g", "lv-closed", "--cache-dir", str(atlas_path.parent)])
+    assert (tmp_path / "MV_CAP_ED.stl").exists()
+    assert (tmp_path / "SEPTAL_BRIDGE_ED.stl").exists()
+    assert not (tmp_path / "RV_FREEWALL_ED.stl").exists()
+    assert json.loads((tmp_path / "parameters.json").read_text())["geometry"] == "lv-closed"
+    manifest = json.loads((tmp_path / ukb.surface.MANIFEST).read_text())
+    assert manifest["geometry"] == "lv-closed"
+    assert set(manifest["volumes"]) == {"Wall", "LV_CAVITY"}
