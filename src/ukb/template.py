@@ -70,7 +70,7 @@ ENDOCARDIUM = {
 class Template(NamedTuple):
     """Labelled biventricular template.
 
-    Attributes
+    Parameters
     ----------
     faces : np.ndarray
         Triangles (0-based node indices), the 11760 triangles of

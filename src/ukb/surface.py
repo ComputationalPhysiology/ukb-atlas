@@ -231,7 +231,7 @@ def main(
 class Recipe(NamedTuple):
     """A geometry made of template regions.
 
-    Attributes
+    Parameters
     ----------
     surfaces : dict[str, tuple[str, ...]]
         Physical surface name -> template regions it is made of
