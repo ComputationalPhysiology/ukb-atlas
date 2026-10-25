@@ -52,7 +52,9 @@ atlas.py  →  surface.py   →  clip.py      →  mesh.py
   `.mat` (`COEFF` is `(N, modes)`, loaded through `scipy.io.loadmat`, nested under `pca200`) —
   `compute_S` distinguishes them by comparing `COEFF.shape[0]` against `LATENT.size`. The returned
   `Points` NamedTuple splits the flat vector in half: first half ED, second half ES. Both arrays
-  have all 5810 template nodes (the `--all` UKB atlas has 5352 nodes and does not fit the template).
+  have all 5810 template nodes. `--all` (the all-subjects UKB atlas) deliberately raises
+  `NotImplementedError` (`atlas.ALL_NOT_SUPPORTED`): it is a 5352-node subset of the template with
+  the aortic/pulmonary outflow tracts removed, and supporting it is not planned.
 - **`template.py`** — the geometry definition. The triangulation and per-triangle region labels
   come from the biv-me template files vendored verbatim in `src/ukb/data/biv-me/` (Apache-2.0,
   provenance in the README there; excluded from pre-commit so they stay byte-identical).
@@ -61,16 +63,20 @@ atlas.py  →  surface.py   →  clip.py      →  mesh.py
   `MV/AV/TV/PV`, valve caps `*_CAP` fanned to the valve centre nodes, and `SEPTAL_BRIDGE` joining
   the RV insertion line to the LV/RV epicardial seam), plus `rings`, `centres`, `insertion`,
   `epi_seam`. `extract(points, regions)` returns one compacted triangle mesh.
-- **`surface.py`** — a *recipe* (`BIV` in `RECIPES`) maps each mesh surface name to template
-  regions. `surf` writes one STL per region (`{REGION}_{case}.stl`) and a `surfaces.json` manifest
-  mapping surface name → files per case; `read_manifest` is how later stages find them. Regions are
+- **`surface.py`** — a *recipe* (`Recipe(surfaces, volumes)` in `RECIPES`: `biv`, `biv-closed`,
+  `lv`, `lv-closed`, selected with `surf --geometry`) maps each mesh surface name to template
+  regions and each volume name to the surfaces enclosing it (closed variants add valve caps and
+  `LV_CAVITY`/`RV_CAVITY`). `surf` writes one STL per region (`{REGION}_{case}.stl`) and a `surfaces.json` manifest
+  mapping surface name → files per case, plus the volumes; `read_manifest` returns
+  `(files, volumes)` and is how later stages find them. Regions are
   kept in separate files on purpose: gmsh fails to mesh the volume when the RV septum and free wall
   are one surface. New geometries (LV-only, closed valves) should be new recipes.
 - **`pointcloud.py`** — labels every node by template region with the fixed integer mapping
   `LABELS` (first entry wins for shared nodes) and writes TSV/CSV.
 - **`clip.py` / `mesh.py`** — clip merges each surface's files, cuts the outflow tracts with a
   pyvista plane (hard-coded default origin/normal); mesh merges the manifest's files in gmsh, builds
-  a volume, and names physical groups after the manifest's surfaces (`Wall` for the volume). The
+  one gmsh volume per manifest volume (conforming where they share surfaces), and names
+  physical groups after the manifest. `clip` only supports the biv geometries. The
   clipped path adds a `BASE` plane surface closing the cut. Mesh paths always `gmsh.finalize()` —
   a leaked gmsh session corrupts later meshes in the same process (e.g. in tests).
 

@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 
 import numpy as np
 import logging
-from typing import Literal
+from typing import Literal, NamedTuple
 
 from . import atlas, template
 
@@ -72,6 +72,17 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
         help="Case to generate surfaces for.",
     )
     parser.add_argument(
+        "-g",
+        "--geometry",
+        choices=list(RECIPES),
+        default="biv",
+        help=(
+            "Geometry to generate surfaces for: biventricular (biv) or LV only (lv), with "
+            "open valves, or with the valves closed by caps so that the cavities are "
+            "closed surfaces (biv-closed, lv-closed)."
+        ),
+    )
+    parser.add_argument(
         "--burns-path",
         type=Path,
         default=None,
@@ -102,6 +113,7 @@ def main(
     burns_path: Path | None = None,
     custom_points: atlas.Points | None = None,
     score: np.ndarray | None = None,
+    geometry: str = "biv",
 ) -> None:
     """Main function to generate  surfas from the UK Biobank atlas.
 
@@ -135,6 +147,9 @@ def main(
         If not None, use these scores to generate points from the atlas instead of
         using the `mode` and `std` parameters. This will override the `mode` and
         `std` parameters if provided.
+    geometry : str
+        Name of the geometry (see ``RECIPES``) to generate surfaces for, by
+        default "biv"
 
     """
 
@@ -152,6 +167,7 @@ def main(
             "verbose": verbose,
             "cache_dir": str(cache_dir),
             "case": case,
+            "geometry": geometry,
             "burns_path": str(burns_path) if burns_path else None,
             "custom_points": str(custom_points) if custom_points else None,
             "score": tolist(score) if score is not None else None,
@@ -195,12 +211,11 @@ def main(
     for c in cases:
         template.check_points(getattr(points, c), name=f"{c} points")
 
-    geometry = "biv"
     recipe = RECIPES[geometry]
     files: dict[str, dict[str, list[str]]] = {}
     for c in cases:
         files[c] = {}
-        for name, regions in recipe.items():
+        for name, regions in recipe.surfaces.items():
             # One file per region: gmsh fails to mesh the volume when e.g. the RV
             # septum and free wall are merged into a single surface
             files[c][name] = []
@@ -210,28 +225,86 @@ def main(
                 logger.info(f"Saved {path}")
                 files[c][name].append(path.name)
 
-    write_manifest(folder, geometry, files)
+    write_manifest(folder, geometry, recipe.volumes, files)
 
 
-# Output surface name -> template regions it is made of
-Recipe = dict[str, tuple[str, ...]]
+class Recipe(NamedTuple):
+    """A geometry made of template regions.
 
-BIV: Recipe = {
-    "LV_ENDO": ("LV_ENDO",),
-    "RV_ENDO": ("RV_SEPTUM", "RV_FREEWALL"),
-    "EPI": ("LV_EPI", "RV_EPI"),
-    "MV": ("MV",),
-    "AV": ("AV",),
-    "TV": ("TV",),
-    "PV": ("PV",),
+    Parameters
+    ----------
+    surfaces : dict[str, tuple[str, ...]]
+        Physical surface name -> template regions it is made of
+    volumes : dict[str, tuple[str, ...]]
+        Physical volume name -> names of the surfaces enclosing it
+    """
+
+    surfaces: dict[str, tuple[str, ...]]
+    volumes: dict[str, tuple[str, ...]]
+
+
+VALVE_CAPS = {
+    "MV_CAP": ("MV_CAP",),
+    "AV_CAP": ("AV_CAP",),
+    "TV_CAP": ("TV_CAP",),
+    "PV_CAP": ("PV_CAP",),
 }
-RECIPES: dict[str, Recipe] = {"biv": BIV}
+
+BIV = Recipe(
+    surfaces={
+        "LV_ENDO": ("LV_ENDO",),
+        "RV_ENDO": ("RV_SEPTUM", "RV_FREEWALL"),
+        "EPI": ("LV_EPI", "RV_EPI"),
+        "MV": ("MV",),
+        "AV": ("AV",),
+        "TV": ("TV",),
+        "PV": ("PV",),
+    },
+    volumes={"Wall": ("LV_ENDO", "RV_ENDO", "EPI", "MV", "AV", "TV", "PV")},
+)
+BIV_CLOSED = Recipe(
+    surfaces=BIV.surfaces | VALVE_CAPS,
+    volumes=BIV.volumes
+    | {
+        "LV_CAVITY": ("LV_ENDO", "MV_CAP", "AV_CAP"),
+        "RV_CAVITY": ("RV_ENDO", "TV_CAP", "PV_CAP"),
+    },
+)
+# The LV wall is closed on the RV side by the RV septal surface and the septal
+# bridge cutting through the wall along the RV insertion
+LV = Recipe(
+    surfaces={
+        "LV_ENDO": ("LV_ENDO",),
+        "EPI": ("LV_EPI",),
+        "RV_SEPTUM": ("RV_SEPTUM",),
+        "SEPTAL_BRIDGE": ("SEPTAL_BRIDGE",),
+        "MV": ("MV",),
+        "AV": ("AV",),
+    },
+    volumes={"Wall": ("LV_ENDO", "EPI", "RV_SEPTUM", "SEPTAL_BRIDGE", "MV", "AV")},
+)
+LV_CLOSED = Recipe(
+    surfaces=LV.surfaces | {"MV_CAP": ("MV_CAP",), "AV_CAP": ("AV_CAP",)},
+    volumes=LV.volumes | {"LV_CAVITY": ("LV_ENDO", "MV_CAP", "AV_CAP")},
+)
+RECIPES: dict[str, Recipe] = {
+    "biv": BIV,
+    "biv-closed": BIV_CLOSED,
+    "lv": LV,
+    "lv-closed": LV_CLOSED,
+}
 
 MANIFEST = "surfaces.json"
 
 
-def write_manifest(folder: Path, geometry: str, files: dict[str, dict[str, list[str]]]) -> None:
-    """Record which surface files make up each surface, for each case.
+def write_manifest(
+    folder: Path,
+    geometry: str,
+    volumes: dict[str, tuple[str, ...]],
+    files: dict[str, dict[str, list[str]]],
+) -> None:
+    """Record the volumes of the geometry and which files make up each surface,
+    for each case.
 
     Cases from an earlier run with the same geometry are kept, so that ED and ES
     can be generated by separate calls.
@@ -243,11 +316,19 @@ def write_manifest(folder: Path, geometry: str, files: dict[str, dict[str, list[
         if old.get("geometry") == geometry:
             cases = old["cases"]
     cases.update(files)
-    path.write_text(json.dumps({"geometry": geometry, "cases": cases}, indent=4))
+    manifest = {"geometry": geometry, "volumes": volumes, "cases": cases}
+    path.write_text(json.dumps(manifest, indent=4))
 
 
-def read_manifest(folder: Path, case: str) -> dict[str, list[Path]]:
-    """Return surface name -> surface files for the given case.
+def read_manifest(folder: Path, case: str) -> tuple[dict[str, list[Path]], dict[str, list[str]]]:
+    """Return the surface files and volumes for the given case.
+
+    Returns
+    -------
+    files : dict[str, list[Path]]
+        Surface name -> files the surface is made of
+    volumes : dict[str, list[str]]
+        Volume name -> names of the surfaces enclosing it
 
     Raises
     ------
@@ -255,9 +336,13 @@ def read_manifest(folder: Path, case: str) -> dict[str, list[Path]]:
         If no surfaces were generated for this case in ``folder``
     """
     path = Path(folder) / MANIFEST
-    cases = json.loads(path.read_text())["cases"] if path.exists() else {}
+    manifest = json.loads(path.read_text()) if path.exists() else {"cases": {}}
+    cases = manifest["cases"]
     if case not in cases:
         raise FileNotFoundError(
             f"No surfaces for case {case} in {folder}. Run `ukb-atlas surf` first."
         )
-    return {name: [Path(folder) / file for file in files] for name, files in cases[case].items()}
+    files = {name: [Path(folder) / file for file in files] for name, files in cases[case].items()}
+    # Manifests written by v1.5.0 do not record the volumes
+    volumes = manifest.get("volumes") or RECIPES[manifest["geometry"]].volumes
+    return files, {name: list(surfaces) for name, surfaces in volumes.items()}
