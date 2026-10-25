@@ -1,5 +1,4 @@
 import json
-import shutil
 import subprocess
 from unittest.mock import patch
 
@@ -169,10 +168,13 @@ def test_mesh_without_manifest(tmp_path):
 
 def test_mesh_geo_fallback(tmp_path, atlas_path):
     ukb.cli.main(["surf", str(tmp_path), "--case", "ED", "--cache-dir", str(atlas_path.parent)])
-    with patch("subprocess.run", return_value=gmsh_result()) as mock_run:
+    with (
+        patch("ukb.mesh.find_gmsh", return_value=FAKE_GMSH),
+        patch("subprocess.run", return_value=gmsh_result()) as mock_run,
+    ):
         ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
-    # gmsh -info and the meshing itself
-    assert mock_run.call_count == 2
+    mock_run.assert_called_once()
+    assert mock_run.call_args.args[0][0] == FAKE_GMSH[0]
     geo = (tmp_path / "ED.geo").read_text()
     assert 'Merge "LV_ENDO_ED.stl";' in geo
     assert 'Physical Surface("RV_ENDO", 2) = {2, 3};' in geo
@@ -398,7 +400,10 @@ def test_closed_wall_matches_open(tmp_path, atlas_path):
 
 def test_mesh_geo_fallback_volumes(tmp_path, atlas_path):
     ukb.cli.main(["surf", str(tmp_path), "-g", "biv-closed", "--cache-dir", str(atlas_path.parent)])
-    with patch("subprocess.run", return_value=gmsh_result()):
+    with (
+        patch("ukb.mesh.find_gmsh", return_value=FAKE_GMSH),
+        patch("subprocess.run", return_value=gmsh_result()),
+    ):
         ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
     geo = (tmp_path / "ED.geo").read_text()
     assert geo.count("Surface Loop(") == 3
@@ -417,18 +422,85 @@ def gmsh_result(returncode=0, stdout="Build options : 64Bit Hxt Netgen Mesh"):
     return subprocess.CompletedProcess(args=[], returncode=returncode, stdout=stdout, stderr="")
 
 
-@pytest.mark.parametrize(
-    "stdout, expected",
-    [("Build options : 64Bit Hxt Netgen Mesh", True), ("Build options : 64Bit Hxt Mesh", False)],
-)
-def test_gmsh_has_netgen(stdout, expected):
-    with patch("subprocess.run", return_value=gmsh_result(stdout=stdout)):
-        assert ukb.mesh.gmsh_has_netgen() is expected
+FAKE_GMSH = ("/opt/gmsh/bin/gmsh", "Build options : 64Bit Hxt Netgen Mesh")
 
 
-def test_gmsh_has_netgen_without_binary():
-    with patch("subprocess.run", side_effect=FileNotFoundError):
-        assert ukb.mesh.gmsh_has_netgen() is False
+def test_find_gmsh():
+    with (
+        patch("shutil.which", return_value="/opt/gmsh/bin/gmsh"),
+        patch("subprocess.run", return_value=gmsh_result(stdout="Build options : Hxt")),
+    ):
+        assert ukb.mesh.find_gmsh() == ("/opt/gmsh/bin/gmsh", "Build options : Hxt")
+
+
+def test_find_gmsh_not_on_path():
+    with patch("shutil.which", return_value=None):
+        assert ukb.mesh.find_gmsh() is None
+
+
+def test_find_gmsh_not_runnable():
+    # e.g. on Windows, where the pip gmsh launcher script found on PATH cannot be run
+    with (
+        patch("shutil.which", return_value="C:/Python/Scripts/gmsh"),
+        patch("subprocess.run", side_effect=OSError("[WinError 2]")),
+    ):
+        assert ukb.mesh.find_gmsh() is None
+
+
+def test_mesh_geo_fallback_no_gmsh(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
+    with (
+        patch("ukb.mesh.find_gmsh", return_value=None),
+        pytest.raises(RuntimeError, match="gmsh"),
+    ):
+        ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
+
+
+def test_mesh_geo_fallback_retries(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
+    with (
+        patch("ukb.mesh.find_gmsh", return_value=FAKE_GMSH),
+        patch("subprocess.run", side_effect=[gmsh_result(returncode=1), gmsh_result()]) as run,
+    ):
+        ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
+    assert run.call_count == 2
+
+
+def flaky_generate(failures):
+    """Return a replacement for gmsh.model.mesh.generate failing the first calls."""
+    gmsh = pytest.importorskip("gmsh")
+    generate = gmsh.model.mesh.generate
+    calls = []
+
+    def generate_(dim=3):
+        calls.append(dim)
+        if len(calls) <= failures:
+            raise Exception("PLC Error:  A segment and a facet intersect at point")
+        generate(dim)
+
+    return generate_, calls
+
+
+def test_mesh_retries_failed_generation(tmp_path, atlas_path):
+    gmsh = pytest.importorskip("gmsh")
+    ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
+    generate, calls = flaky_generate(failures=1)
+    with patch.object(gmsh.model.mesh, "generate", generate):
+        ukb.cli.main(["mesh", str(tmp_path)])
+    assert len(calls) == 2
+    assert (tmp_path / "ED.msh").exists()
+
+
+def test_mesh_gives_up_after_retries(tmp_path, atlas_path):
+    gmsh = pytest.importorskip("gmsh")
+    ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
+    generate, calls = flaky_generate(failures=10)
+    with (
+        patch.object(gmsh.model.mesh, "generate", generate),
+        pytest.raises(Exception, match="PLC"),
+    ):
+        ukb.cli.main(["mesh", str(tmp_path)])
+    assert len(calls) == 3
 
 
 @pytest.mark.parametrize("netgen", [True, False])
@@ -439,7 +511,10 @@ def test_geo_script_netgen(tmp_path, netgen):
 
 def test_mesh_geo_fallback_without_netgen(tmp_path, atlas_path):
     ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
-    with patch("subprocess.run", return_value=gmsh_result(stdout="Build options : Hxt")):
+    with (
+        patch("ukb.mesh.find_gmsh", return_value=("gmsh", "Build options : Hxt")),
+        patch("subprocess.run", return_value=gmsh_result()),
+    ):
         ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
     assert "Mesh.OptimizeNetgen = 0;" in (tmp_path / "ED.geo").read_text()
 
@@ -447,13 +522,15 @@ def test_mesh_geo_fallback_without_netgen(tmp_path, atlas_path):
 def test_mesh_geo_fallback_gmsh_fails(tmp_path, atlas_path):
     ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
     with (
-        patch("subprocess.run", return_value=gmsh_result(returncode=1)),
+        patch("ukb.mesh.find_gmsh", return_value=FAKE_GMSH),
+        patch("subprocess.run", return_value=gmsh_result(returncode=1)) as run,
         pytest.raises(RuntimeError, match="gmsh"),
     ):
         ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED")
+    assert run.call_count == 3
 
 
-@pytest.mark.skipif(shutil.which("gmsh") is None, reason="needs the gmsh binary")
+@pytest.mark.skipif(ukb.mesh.find_gmsh() is None, reason="needs a working gmsh binary")
 @pytest.mark.parametrize("geometry", ["lv", "biv-closed"])
 def test_mesh_geo_fallback_real_gmsh(tmp_path, atlas_path, geometry):
     ukb.cli.main(["surf", str(tmp_path), "-g", geometry, "--cache-dir", str(atlas_path.parent)])
