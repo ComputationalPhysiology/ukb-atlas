@@ -54,6 +54,13 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
         help="Minimum characteristic length of the mesh elements.",
     )
     parser.add_argument(
+        "--order",
+        type=int,
+        default=1,
+        help="Order of the mesh elements. The nodes of higher order elements are placed "
+        "on the surfaces.",
+    )
+    parser.add_argument(
         "-v",
         "--verbose",
         action="store_true",
@@ -96,6 +103,10 @@ CreateGeometry;
 
 Mesh.CharacteristicLengthMax = {char_length_max};
 Mesh.CharacteristicLengthMin = {char_length_min};
+Mesh.ElementOrder = {order};
+// Placing the high order nodes on the faceted surfaces can invert elements,
+// which the high order optimizer untangles
+Mesh.HighOrderOptimize = {high_order_optimize};
 // Mesh.CharacteristicLengthFromCurvature = 1;
 // Mesh.MinimumElementsPerTwoPi = 20;
 // Mesh.AngleToleranceFacetOverlap = 0.04;
@@ -123,12 +134,14 @@ def geo_script(
     char_length_max: float,
     char_length_min: float,
     netgen: bool = True,
+    order: int = 1,
 ) -> str:
     """Return a gmsh .geo script that meshes the volumes enclosed by ``files``.
 
     Each merged file becomes one surface whose tag is its (1-based) merge
     position, which is used for the volumes and the physical groups. The
-    Netgen optimizer is only enabled if ``netgen`` is true.
+    Netgen optimizer is only enabled if ``netgen`` is true, and the elements
+    have order ``order``.
     """
     merges: list[str] = []
     tags: dict[str, list[int]] = {}
@@ -157,6 +170,8 @@ def geo_script(
         char_length_max=char_length_max,
         char_length_min=char_length_min,
         netgen=int(netgen),
+        order=order,
+        high_order_optimize=int(order > 1),
     )
 
 
@@ -181,6 +196,7 @@ def create_mesh_geo(
     char_length_max: float,
     char_length_min: float,
     case: Literal["ED", "ES", "both"] = "ED",
+    order: int = 1,
 ) -> None:
     """Create a mesh by writing a .geo file and running the gmsh binary.
 
@@ -194,6 +210,8 @@ def create_mesh_geo(
         Minimum characteristic length of the mesh elements
     case : str
         Case name, by default "ED"
+    order : int
+        Order of the mesh elements, by default 1
     """
     files, volumes = surface.read_manifest(folder, case)
     geofile = folder / f"{case}.geo"
@@ -208,7 +226,7 @@ def create_mesh_geo(
     netgen = "Netgen" in info
     if not netgen:
         logger.warning("gmsh is built without Netgen, skipping Netgen optimization")
-    geofile.write_text(geo_script(files, volumes, char_length_max, char_length_min, netgen))
+    geofile.write_text(geo_script(files, volumes, char_length_max, char_length_min, netgen, order))
 
     mshfile = folder / f"{case}.msh"
     logger.debug(f"Create mesh {mshfile} using gmsh")
@@ -228,7 +246,7 @@ def create_mesh_geo(
     logger.info(f"Created mesh {mshfile}")
 
 
-def set_mesh_options(gmsh, char_length_max: float, char_length_min: float) -> None:
+def set_mesh_options(gmsh, char_length_max: float, char_length_min: float, order: int = 1) -> None:
     gmsh.option.setNumber("Mesh.Optimize", 1)
     # Not all gmsh builds (e.g. some Linux distributions) include Netgen
     if "Netgen" in gmsh.option.getString("General.BuildOptions"):
@@ -239,6 +257,10 @@ def set_mesh_options(gmsh, char_length_max: float, char_length_min: float) -> No
     gmsh.option.setNumber("Mesh.CharacteristicLengthMax", char_length_max)
     gmsh.option.setNumber("Mesh.CharacteristicLengthMin", char_length_min)
     gmsh.option.setNumber("Mesh.Algorithm3D", 1)
+    gmsh.option.setNumber("Mesh.ElementOrder", order)
+    # Placing the high order nodes on the faceted surfaces can invert elements,
+    # which the high order optimizer untangles
+    gmsh.option.setNumber("Mesh.HighOrderOptimize", int(order > 1))
 
 
 def main(
@@ -248,6 +270,7 @@ def main(
     char_length_min: float = 5.0,
     verbose: bool = False,
     clipped: bool = False,
+    order: int = 1,
 ) -> None:
     """Create a gmsh mesh file from the surface mesh representation.
 
@@ -269,12 +292,14 @@ def main(
         Print verbose output, by default False
     clipped : bool, optional
         Create a clipped mesh, by default False
+    order : int, optional
+        Order of the mesh elements, by default 1
     """
     if case == "both":
         if clipped:
             raise ValueError("The clipped surfaces are for a single case; use --case ED or ES")
         for c in ("ED", "ES"):
-            main(folder, c, char_length_max, char_length_min, verbose, clipped)
+            main(folder, c, char_length_max, char_length_min, verbose, clipped, order)
         return
     if clipped:
         return create_clipped_mesh(
@@ -282,15 +307,16 @@ def main(
             case=case,
             char_length_max=char_length_max,
             char_length_min=char_length_min,
+            order=order,
         )
     files, volumes = surface.read_manifest(folder, case)
-    logger.info(f"Creating mesh for {case} with {char_length_max=}, {char_length_min=}")
+    logger.info(f"Creating mesh for {case} with {char_length_max=}, {char_length_min=}, {order=}")
     try:
         import gmsh
 
     except ImportError:
         logger.warning("gmsh python API not installed. Try subprocess.")
-        return create_mesh_geo(folder, char_length_max, char_length_min, case)
+        return create_mesh_geo(folder, char_length_max, char_length_min, case, order)
 
     def create() -> None:
         gmsh.initialize()
@@ -332,7 +358,7 @@ def main(
                 p = gmsh.model.addPhysicalGroup(3, [volume_tag])
                 gmsh.model.setPhysicalName(3, p, name)
 
-            set_mesh_options(gmsh, char_length_max, char_length_min)
+            set_mesh_options(gmsh, char_length_max, char_length_min, order)
             gmsh.model.geo.synchronize()
             gmsh.model.mesh.generate(3)
             gmsh.write(f"{folder}/{case}.msh")
@@ -349,6 +375,7 @@ def create_clipped_mesh(
     char_length_max: float = 5.0,
     char_length_min: float = 5.0,
     verbose: bool = False,
+    order: int = 1,
 ) -> None:
     """Create a gmsh mesh from the clipped surfaces written by ``ukb-atlas clip``.
 
@@ -364,8 +391,12 @@ def create_clipped_mesh(
         Minimum characteristic length of the mesh elements
     verbose : bool, optional
         Print verbose output, by default False
+    order : int, optional
+        Order of the mesh elements, by default 1
     """
-    logger.info(f"Creating clipped mesh for {case} with {char_length_max=}, {char_length_min=}")
+    logger.info(
+        f"Creating clipped mesh for {case} with {char_length_max=}, {char_length_min=}, {order=}"
+    )
     import gmsh
 
     def create() -> None:
@@ -407,7 +438,7 @@ def create_clipped_mesh(
             p = gmsh.model.addPhysicalGroup(3, [vol])
             gmsh.model.setPhysicalName(3, p, "Wall")
 
-            set_mesh_options(gmsh, char_length_max, char_length_min)
+            set_mesh_options(gmsh, char_length_max, char_length_min, order)
             gmsh.model.geo.synchronize()
             gmsh.model.mesh.generate(3)
             outfile = (folder / f"{case}_clipped").with_suffix(".msh")

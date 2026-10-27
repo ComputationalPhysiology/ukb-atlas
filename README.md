@@ -44,7 +44,7 @@ which files make up each surface of the mesh: `LV_ENDO`, `RV_ENDO` (RV septum an
 Now we can generate a mesh from these surfaces
 ```
 $ ukb-atlas mesh data
-INFO:ukb.mesh:Creating mesh for ED with char_length_max=5.0, char_length_min=5.0
+INFO:ukb.mesh:Creating mesh for ED with char_length_max=5.0, char_length_min=5.0, order=1
 INFO:ukb.mesh:Created mesh data/ED.msh
 ```
 The mesh has the physical surfaces `LV_ENDO`, `RV_ENDO`, `EPI`, `MV`, `AV`, `TV` and `PV`, and the
@@ -75,7 +75,7 @@ Warning: PLY doesn't support 64-bit integers. Casting down to 32-bit.
 and then create a mesh from the clipped surfaces
 ```
 $ ukb-atlas mesh data --clipped
-INFO:ukb.mesh:Creating clipped mesh for ED with char_length_max=5.0, char_length_min=5.0
+INFO:ukb.mesh:Creating clipped mesh for ED with char_length_max=5.0, char_length_min=5.0, order=1
 INFO:ukb.mesh:Created mesh data/ED_clipped.msh
 ```
 The clipped mesh has the physical surfaces `LV_ENDO`, `RV_ENDO`, `EPI` and `BASE`, and the physical
@@ -106,6 +106,16 @@ $ ukb-atlas surf data -g biv-closed
 $ ukb-atlas mesh data
 ```
 `clip` only supports the `biv` geometries.
+
+### Higher order meshes
+
+`mesh` takes an `--order` option for elements of higher order, e.g. quadratic tetrahedra with
+```
+$ ukb-atlas mesh data --order 2
+```
+The nodes of the higher order elements are placed on the surfaces. Since the surfaces are
+triangulations this can invert elements, so they are untangled with the high order optimizer of
+gmsh. This is fast for order 2, but can take a few minutes for order 3.
 
 We can also export labelled point clouds directly from the atlas using the `points` command
 ```
