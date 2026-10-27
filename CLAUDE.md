@@ -71,6 +71,15 @@ atlas.py  →  surface.py   →  clip.py      →  mesh.py
   `(files, volumes)` and is how later stages find them. Regions are
   kept in separate files on purpose: gmsh fails to mesh the volume when the RV septum and free wall
   are one surface. New geometries (LV-only, closed valves) should be new recipes.
+- **`smooth.py`** — `surf --refine N`. The template subdivides the 354 faces of the biv-me
+  control mesh (wall surfaces only) into 4 x 4 quads; `etVertexElementNum.txt`/`etVertexXi.txt`
+  give each node's element and xi, so `face_grids(points)` assembles the 5 x 5 node grid of each
+  face (boundary nodes are stored with one face only, so they are matched geometrically and
+  validated against the template triangles). `refine` splits every triangle into four, placing new
+  nodes on a per-face tensor-product cubic spline through the atlas nodes (C0 across faces, exact
+  at the nodes); rims, caps and the septal bridge get edge midpoints. Original nodes keep their
+  indices. Fitting biv-me's own control points does not work: the UKB atlas is not in the span of
+  biv-me's basis (errors up to ~10 mm on the RV epicardium).
 - **`pointcloud.py`** — labels every node by template region with the fixed integer mapping
   `LABELS` (first entry wins for shared nodes) and writes TSV/CSV.
 - **`clip.py` / `mesh.py`** — clip merges each surface's files, cuts the outflow tracts with a
@@ -79,6 +88,10 @@ atlas.py  →  surface.py   →  clip.py      →  mesh.py
   physical groups after the manifest. `clip` only supports the biv geometries. The
   clipped path adds a `BASE` plane surface closing the cut. Mesh paths always `gmsh.finalize()` —
   a leaked gmsh session corrupts later meshes in the same process (e.g. in tests).
+  For `--order > 1` the gmsh work (`generate_mesh`/`generate_clipped_mesh`) runs in a separate
+  `python -c` process via `run_gmsh` (args as JSON, so paths arrive as strings): gmsh's high
+  order optimizer sporadically aborts the process with an uncaught C++ exception, which this turns
+  into a retryable error. Order 1 stays in-process (tests patch gmsh there).
 
 ### Node numbering
 

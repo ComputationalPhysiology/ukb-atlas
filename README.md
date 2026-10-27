@@ -115,7 +115,24 @@ $ ukb-atlas mesh data --order 2
 ```
 The nodes of the higher order elements are placed on the surfaces. Since the surfaces are
 triangulations this can invert elements, so they are untangled with the high order optimizer of
-gmsh. This is fast for order 2, but can take a few minutes for order 3.
+gmsh. This is fast for order 2, but can take a few minutes for order 3. The optimizer sometimes
+aborts the whole process, so meshes of higher order are created in a separate process and retried
+if it fails.
+
+The nodes of the higher order elements can only be as accurate as the surfaces they are placed on,
+and the triangles of the atlas have sides of 3-4 mm. With `surf --refine N` each triangle is split
+into four `N` times, and the new nodes are placed on a smooth surface through the nodes of the
+atlas: the template is a subdivision of the faces of a coarse control mesh into 4 x 4 quads, so on
+each face the atlas nodes are a regular grid, which we interpolate with a cubic spline (see
+`ukb.smooth`). The valve rims and caps, and the septal bridge, are not on the control mesh and are
+split at the midpoints of their edges. With quadratic elements this lets you use much coarser
+meshes, e.g.
+```
+$ ukb-atlas surf data -g lv-closed --refine 2
+$ ukb-atlas mesh data --order 2 --char_length_max 10 --char_length_min 10
+```
+gives a volume of the LV cavity within 0.01% of the smooth surface with fewer than 4000 cells in
+the wall, while linear elements of size 2 mm (60000 cells in the wall) are 0.1% off.
 
 We can also export labelled point clouds directly from the atlas using the `points` command
 ```

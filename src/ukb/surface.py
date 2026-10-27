@@ -8,7 +8,7 @@ import numpy as np
 import logging
 from typing import Literal, NamedTuple
 
-from . import atlas, template
+from . import atlas, smooth, template
 
 logger = logging.getLogger(__name__)
 
@@ -83,6 +83,17 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--refine",
+        type=int,
+        default=0,
+        help=(
+            "Number of times to refine the surfaces by splitting each triangle into four. "
+            "The new nodes are placed on smooth surfaces through the nodes of the atlas, "
+            "which makes the surfaces closer to the smooth shape of the atlas. This is useful "
+            "for meshes of higher order. By default 0"
+        ),
+    )
+    parser.add_argument(
         "--burns-path",
         type=Path,
         default=None,
@@ -114,6 +125,7 @@ def main(
     custom_points: atlas.Points | None = None,
     score: np.ndarray | None = None,
     geometry: str = "biv",
+    refine: int = 0,
 ) -> None:
     """Main function to generate  surfas from the UK Biobank atlas.
 
@@ -150,6 +162,9 @@ def main(
     geometry : str
         Name of the geometry (see ``RECIPES``) to generate surfaces for, by
         default "biv"
+    refine : int
+        Number of times to refine the surfaces, placing the new nodes on smooth
+        surfaces through the nodes of the atlas (see ``ukb.smooth``), by default 0
 
     """
 
@@ -168,6 +183,7 @@ def main(
             "cache_dir": str(cache_dir),
             "case": case,
             "geometry": geometry,
+            "refine": refine,
             "burns_path": str(burns_path) if burns_path else None,
             "custom_points": str(custom_points) if custom_points else None,
             "score": tolist(score) if score is not None else None,
@@ -215,13 +231,14 @@ def main(
     files: dict[str, dict[str, list[str]]] = {}
     for c in cases:
         files[c] = {}
+        case_points, case_template = smooth.refine(getattr(points, c), refine)
         for name, regions in recipe.surfaces.items():
             # One file per region: gmsh fails to mesh the volume when e.g. the RV
             # septum and free wall are merged into a single surface
             files[c][name] = []
             for region in regions:
                 path = folder / f"{region}_{c}.stl"
-                template.extract(getattr(points, c), [region]).write(str(path))
+                template.extract(case_points, [region], template=case_template).write(str(path))
                 logger.info(f"Saved {path}")
                 files[c][name].append(path.name)
 
