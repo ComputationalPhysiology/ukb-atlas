@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 import subprocess
 from unittest.mock import patch
 
@@ -566,3 +568,16 @@ def test_mesh_geo_fallback_order(tmp_path, atlas_path):
         geo = (tmp_path / "ED.geo").read_text()
         assert f"Mesh.ElementOrder = {order};" in geo
         assert f"Mesh.HighOrderOptimize = {optimize};" in geo
+
+
+def test_run_gmsh_isolated_abort_raises():
+    # An abort of the separate process (as gmsh's high order optimizer sometimes
+    # does) becomes an error that can be retried
+    with pytest.raises(RuntimeError, match="exited with code"):
+        ukb.mesh.run_gmsh(os.abort, isolate=True)
+
+
+def test_run_gmsh_isolated_passes_arguments(tmp_path):
+    (tmp_path / "a.txt").write_text("hello")
+    ukb.mesh.run_gmsh(shutil.copyfile, isolate=True, src=tmp_path / "a.txt", dst=tmp_path / "b.txt")
+    assert (tmp_path / "b.txt").read_text() == "hello"

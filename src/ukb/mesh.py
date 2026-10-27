@@ -1,9 +1,11 @@
 from textwrap import dedent
 from pathlib import Path
-from typing import Callable, Literal
+from typing import Any, Callable, Literal
 from argparse import ArgumentParser
+import json
 import shutil
 import subprocess
+import sys
 import logging
 
 from . import surface
@@ -25,6 +27,40 @@ def with_retries(create: Callable[[], None]) -> None:
             if attempt == MAX_ATTEMPTS:
                 raise
             logger.warning(f"Meshing failed ({e}), retrying ({attempt}/{MAX_ATTEMPTS})")
+
+
+def run_gmsh(target: Callable[..., None], isolate: bool, **kwargs: Any) -> None:
+    """Call ``target(**kwargs)``, in a separate Python process if ``isolate`` is true.
+
+    The high order optimizer of gmsh sporadically aborts the whole process
+    (with an uncaught C++ exception) instead of raising an error, so meshes of
+    higher order are created in a separate process, where an abort becomes an
+    error that can be retried. The arguments are passed as JSON, so paths are
+    passed as strings.
+    """
+    if not isolate:
+        target(**kwargs)
+        return
+    code = (
+        "import importlib, json, sys; "
+        "target = getattr(importlib.import_module(sys.argv[1]), sys.argv[2]); "
+        "target(**json.loads(sys.argv[3]))"
+    )
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            code,
+            target.__module__,
+            target.__name__,
+            json.dumps(kwargs, default=str),
+        ],
+        stderr=subprocess.PIPE,
+        text=True,
+    )
+    if result.returncode != 0:
+        error = "\n".join(result.stderr.strip().splitlines()[-5:])
+        raise RuntimeError(f"gmsh exited with code {result.returncode}:\n{error}")
 
 
 def add_parser_arguments(parser: ArgumentParser) -> None:
@@ -312,61 +348,27 @@ def main(
     files, volumes = surface.read_manifest(folder, case)
     logger.info(f"Creating mesh for {case} with {char_length_max=}, {char_length_min=}, {order=}")
     try:
-        import gmsh
+        import gmsh  # noqa: F401
 
     except ImportError:
         logger.warning("gmsh python API not installed. Try subprocess.")
         return create_mesh_geo(folder, char_length_max, char_length_min, case, order)
 
-    def create() -> None:
-        gmsh.initialize()
-        try:
-            if not verbose:
-                gmsh.option.setNumber("General.Verbosity", 0)
-
-            # Merge all surfaces, recording which surface entities each file created
-            tags: dict[str, list[int]] = {}
-            for name, paths in files.items():
-                before = set(gmsh.model.getEntities(2))
-                for path in paths:
-                    gmsh.merge(str(path))
-                tags[name] = sorted(tag for _, tag in set(gmsh.model.getEntities(2)) - before)
-
-            num_surfaces = len(gmsh.model.getEntities(2))
-            gmsh.model.mesh.removeDuplicateNodes()
-            gmsh.model.mesh.create_topology()
-            gmsh.model.mesh.create_geometry()
-            surfaces = gmsh.model.getEntities(2)
-            if len(surfaces) != num_surfaces:
-                raise RuntimeError(
-                    "gmsh changed the surfaces while merging; physical groups would be wrong"
-                )
-
-            # One volume per declared volume; volumes sharing a surface (e.g. the wall
-            # and a cavity sharing the endocardium) give a conforming mesh
-            volume_tags = {}
-            for name, volume_surfaces in volumes.items():
-                loop = gmsh.model.geo.addSurfaceLoop([t for s in volume_surfaces for t in tags[s]])
-                volume_tags[name] = gmsh.model.geo.addVolume([loop])
-            gmsh.model.geo.synchronize()
-
-            for name, surface_tags in tags.items():
-                p = gmsh.model.addPhysicalGroup(2, surface_tags)
-                gmsh.model.setPhysicalName(2, p, name)
-
-            for name, volume_tag in volume_tags.items():
-                p = gmsh.model.addPhysicalGroup(3, [volume_tag])
-                gmsh.model.setPhysicalName(3, p, name)
-
-            set_mesh_options(gmsh, char_length_max, char_length_min, order)
-            gmsh.model.geo.synchronize()
-            gmsh.model.mesh.generate(3)
-            gmsh.write(f"{folder}/{case}.msh")
-            logger.info(f"Created mesh {folder}/{case}.msh")
-        finally:
-            gmsh.finalize()
-
-    with_retries(create)
+    with_retries(
+        lambda: run_gmsh(
+            generate_mesh,
+            isolate=order > 1,
+            folder=folder,
+            case=case,
+            files=files,
+            volumes=volumes,
+            char_length_max=char_length_max,
+            char_length_min=char_length_min,
+            verbose=verbose,
+            order=order,
+        )
+    )
+    logger.info(f"Created mesh {folder}/{case}.msh")
 
 
 def create_clipped_mesh(
@@ -397,54 +399,134 @@ def create_clipped_mesh(
     logger.info(
         f"Creating clipped mesh for {case} with {char_length_max=}, {char_length_min=}, {order=}"
     )
+    with_retries(
+        lambda: run_gmsh(
+            generate_clipped_mesh,
+            isolate=order > 1,
+            folder=folder,
+            case=case,
+            char_length_max=char_length_max,
+            char_length_min=char_length_min,
+            verbose=verbose,
+            order=order,
+        )
+    )
+    logger.info(f"Created mesh {(folder / f'{case}_clipped').with_suffix('.msh')}")
+
+
+def generate_mesh(
+    folder: Path | str,
+    case: str,
+    files: dict[str, list[Path]] | dict[str, list[str]],
+    volumes: dict[str, list[str]],
+    char_length_max: float,
+    char_length_min: float,
+    verbose: bool,
+    order: int,
+) -> None:
+    """Mesh the volumes enclosed by ``files`` with gmsh and write ``folder/case.msh``."""
     import gmsh
 
-    def create() -> None:
-        gmsh.initialize()
-        try:
-            if not verbose:
-                gmsh.option.setNumber("General.Verbosity", 0)
+    gmsh.initialize()
+    try:
+        if not verbose:
+            gmsh.option.setNumber("General.Verbosity", 0)
 
-            # Merge all surfaces
-            tags: dict[str, list[int]] = {}
-            for name, filename in [
-                ("LV_ENDO", "lv_clipped.ply"),
-                ("RV_ENDO", "rv_clipped.ply"),
-                ("EPI", "epi_clipped.ply"),
-            ]:
-                before = set(gmsh.model.getEntities(2))
-                gmsh.merge(f"{folder}/{filename}")
-                tags[name] = sorted(tag for _, tag in set(gmsh.model.getEntities(2)) - before)
+        # Merge all surfaces, recording which surface entities each file created
+        tags: dict[str, list[int]] = {}
+        for name, paths in files.items():
+            before = set(gmsh.model.getEntities(2))
+            for path in paths:
+                gmsh.merge(str(path))
+            tags[name] = sorted(tag for _, tag in set(gmsh.model.getEntities(2)) - before)
 
-            gmsh.model.mesh.removeDuplicateNodes()
-            gmsh.model.mesh.create_topology()
-            gmsh.model.mesh.create_geometry()
+        num_surfaces = len(gmsh.model.getEntities(2))
+        gmsh.model.mesh.removeDuplicateNodes()
+        gmsh.model.mesh.create_topology()
+        gmsh.model.mesh.create_geometry()
+        surfaces = gmsh.model.getEntities(2)
+        if len(surfaces) != num_surfaces:
+            raise RuntimeError(
+                "gmsh changed the surfaces while merging; physical groups would be wrong"
+            )
 
-            # Close the base with a plane surface bounded by the cut curves
-            curves = gmsh.model.getEntities(1)
-            base_ring = gmsh.model.geo.addCurveLoop([c[1] for c in curves])
-            tags["BASE"] = [gmsh.model.geo.addPlaneSurface([base_ring])]
-            gmsh.model.geo.synchronize()
+        # One volume per declared volume; volumes sharing a surface (e.g. the wall
+        # and a cavity sharing the endocardium) give a conforming mesh
+        volume_tags = {}
+        for name, volume_surfaces in volumes.items():
+            loop = gmsh.model.geo.addSurfaceLoop([t for s in volume_surfaces for t in tags[s]])
+            volume_tags[name] = gmsh.model.geo.addVolume([loop])
+        gmsh.model.geo.synchronize()
 
-            surfaces = gmsh.model.getEntities(2)
-            loop = gmsh.model.geo.addSurfaceLoop([s[1] for s in surfaces])
-            vol = gmsh.model.geo.addVolume([loop])
-            gmsh.model.geo.synchronize()
+        for name, surface_tags in tags.items():
+            p = gmsh.model.addPhysicalGroup(2, surface_tags)
+            gmsh.model.setPhysicalName(2, p, name)
 
-            for name, surface_tags in tags.items():
-                p = gmsh.model.addPhysicalGroup(2, surface_tags)
-                gmsh.model.setPhysicalName(2, p, name)
+        for name, volume_tag in volume_tags.items():
+            p = gmsh.model.addPhysicalGroup(3, [volume_tag])
+            gmsh.model.setPhysicalName(3, p, name)
 
-            p = gmsh.model.addPhysicalGroup(3, [vol])
-            gmsh.model.setPhysicalName(3, p, "Wall")
+        set_mesh_options(gmsh, char_length_max, char_length_min, order)
+        gmsh.model.geo.synchronize()
+        gmsh.model.mesh.generate(3)
+        gmsh.write(f"{folder}/{case}.msh")
+    finally:
+        gmsh.finalize()
 
-            set_mesh_options(gmsh, char_length_max, char_length_min, order)
-            gmsh.model.geo.synchronize()
-            gmsh.model.mesh.generate(3)
-            outfile = (folder / f"{case}_clipped").with_suffix(".msh")
-            gmsh.write(str(outfile))
-            logger.info(f"Created mesh {outfile}")
-        finally:
-            gmsh.finalize()
 
-    with_retries(create)
+def generate_clipped_mesh(
+    folder: Path | str,
+    case: str,
+    char_length_max: float,
+    char_length_min: float,
+    verbose: bool,
+    order: int,
+) -> None:
+    """Mesh the volume enclosed by the clipped surfaces with gmsh and write the mesh."""
+    import gmsh
+
+    gmsh.initialize()
+    try:
+        if not verbose:
+            gmsh.option.setNumber("General.Verbosity", 0)
+
+        # Merge all surfaces
+        tags: dict[str, list[int]] = {}
+        for name, filename in [
+            ("LV_ENDO", "lv_clipped.ply"),
+            ("RV_ENDO", "rv_clipped.ply"),
+            ("EPI", "epi_clipped.ply"),
+        ]:
+            before = set(gmsh.model.getEntities(2))
+            gmsh.merge(f"{folder}/{filename}")
+            tags[name] = sorted(tag for _, tag in set(gmsh.model.getEntities(2)) - before)
+
+        gmsh.model.mesh.removeDuplicateNodes()
+        gmsh.model.mesh.create_topology()
+        gmsh.model.mesh.create_geometry()
+
+        # Close the base with a plane surface bounded by the cut curves
+        curves = gmsh.model.getEntities(1)
+        base_ring = gmsh.model.geo.addCurveLoop([c[1] for c in curves])
+        tags["BASE"] = [gmsh.model.geo.addPlaneSurface([base_ring])]
+        gmsh.model.geo.synchronize()
+
+        surfaces = gmsh.model.getEntities(2)
+        loop = gmsh.model.geo.addSurfaceLoop([s[1] for s in surfaces])
+        vol = gmsh.model.geo.addVolume([loop])
+        gmsh.model.geo.synchronize()
+
+        for name, surface_tags in tags.items():
+            p = gmsh.model.addPhysicalGroup(2, surface_tags)
+            gmsh.model.setPhysicalName(2, p, name)
+
+        p = gmsh.model.addPhysicalGroup(3, [vol])
+        gmsh.model.setPhysicalName(3, p, "Wall")
+
+        set_mesh_options(gmsh, char_length_max, char_length_min, order)
+        gmsh.model.geo.synchronize()
+        gmsh.model.mesh.generate(3)
+        outfile = (Path(folder) / f"{case}_clipped").with_suffix(".msh")
+        gmsh.write(str(outfile))
+    finally:
+        gmsh.finalize()
