@@ -1,4 +1,6 @@
 import json
+import os
+import shutil
 import subprocess
 from unittest.mock import patch
 
@@ -539,3 +541,43 @@ def test_mesh_geo_fallback_real_gmsh(tmp_path, atlas_path, geometry):
     assert physical_names(tmp_path / "ED.msh") == {(s, 2) for s in recipe.surfaces} | {
         (v, 3) for v in recipe.volumes
     }
+
+
+@pytest.mark.parametrize("clipped", [False, True])
+def test_mesh_order(tmp_path, atlas_path, clipped):
+    meshio = pytest.importorskip("meshio")
+    ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
+    args = ["mesh", str(tmp_path), "--order", "2"]
+    if clipped:
+        ukb.cli.main(["clip", str(tmp_path), "--smooth"])
+        args.append("--clipped")
+    ukb.cli.main(args)
+    mesh = meshio.read(tmp_path / ("ED_clipped.msh" if clipped else "ED.msh"))
+    assert {cell.type for cell in mesh.cells} >= {"tetra10", "triangle6"}
+    assert not {"tetra", "triangle"} & {cell.type for cell in mesh.cells}
+
+
+def test_mesh_geo_fallback_order(tmp_path, atlas_path):
+    ukb.cli.main(["surf", str(tmp_path), "--cache-dir", str(atlas_path.parent)])
+    for order, optimize in [(1, 0), (2, 1)]:
+        with (
+            patch("ukb.mesh.find_gmsh", return_value=FAKE_GMSH),
+            patch("subprocess.run", return_value=gmsh_result()),
+        ):
+            ukb.mesh.create_mesh_geo(tmp_path, 5.0, 5.0, "ED", order=order)
+        geo = (tmp_path / "ED.geo").read_text()
+        assert f"Mesh.ElementOrder = {order};" in geo
+        assert f"Mesh.HighOrderOptimize = {optimize};" in geo
+
+
+def test_run_gmsh_isolated_abort_raises():
+    # An abort of the separate process (as gmsh's high order optimizer sometimes
+    # does) becomes an error that can be retried
+    with pytest.raises(RuntimeError, match="exited with code"):
+        ukb.mesh.run_gmsh(os.abort, isolate=True)
+
+
+def test_run_gmsh_isolated_passes_arguments(tmp_path):
+    (tmp_path / "a.txt").write_text("hello")
+    ukb.mesh.run_gmsh(shutil.copyfile, isolate=True, src=tmp_path / "a.txt", dst=tmp_path / "b.txt")
+    assert (tmp_path / "b.txt").read_text() == "hello"

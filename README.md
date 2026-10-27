@@ -44,7 +44,7 @@ which files make up each surface of the mesh: `LV_ENDO`, `RV_ENDO` (RV septum an
 Now we can generate a mesh from these surfaces
 ```
 $ ukb-atlas mesh data
-INFO:ukb.mesh:Creating mesh for ED with char_length_max=5.0, char_length_min=5.0
+INFO:ukb.mesh:Creating mesh for ED with char_length_max=5.0, char_length_min=5.0, order=1
 INFO:ukb.mesh:Created mesh data/ED.msh
 ```
 The mesh has the physical surfaces `LV_ENDO`, `RV_ENDO`, `EPI`, `MV`, `AV`, `TV` and `PV`, and the
@@ -75,7 +75,7 @@ Warning: PLY doesn't support 64-bit integers. Casting down to 32-bit.
 and then create a mesh from the clipped surfaces
 ```
 $ ukb-atlas mesh data --clipped
-INFO:ukb.mesh:Creating clipped mesh for ED with char_length_max=5.0, char_length_min=5.0
+INFO:ukb.mesh:Creating clipped mesh for ED with char_length_max=5.0, char_length_min=5.0, order=1
 INFO:ukb.mesh:Created mesh data/ED_clipped.msh
 ```
 The clipped mesh has the physical surfaces `LV_ENDO`, `RV_ENDO`, `EPI` and `BASE`, and the physical
@@ -106,6 +106,33 @@ $ ukb-atlas surf data -g biv-closed
 $ ukb-atlas mesh data
 ```
 `clip` only supports the `biv` geometries.
+
+### Higher order meshes
+
+`mesh` takes an `--order` option for elements of higher order, e.g. quadratic tetrahedra with
+```
+$ ukb-atlas mesh data --order 2
+```
+The nodes of the higher order elements are placed on the surfaces. Since the surfaces are
+triangulations this can invert elements, so they are untangled with the high order optimizer of
+gmsh. This is fast for order 2, but can take a few minutes for order 3. The optimizer sometimes
+aborts the whole process, so meshes of higher order are created in a separate process and retried
+if it fails.
+
+The nodes of the higher order elements can only be as accurate as the surfaces they are placed on,
+and the triangles of the atlas have sides of 3-4 mm. With `surf --refine N` each triangle is split
+into four `N` times, and the new nodes are placed on a smooth surface through the nodes of the
+atlas: the template is a subdivision of the faces of a coarse control mesh into 4 x 4 quads, so on
+each face the atlas nodes are a regular grid, which we interpolate with a cubic spline (see
+`ukb.smooth`). The valve rims and caps, and the septal bridge, are not on the control mesh and are
+split at the midpoints of their edges. With quadratic elements this lets you use much coarser
+meshes, e.g.
+```
+$ ukb-atlas surf data -g lv-closed --refine 2
+$ ukb-atlas mesh data --order 2 --char_length_max 10 --char_length_min 10
+```
+gives a volume of the LV cavity within 0.01% of the smooth surface with fewer than 4000 cells in
+the wall, while linear elements of size 2 mm (60000 cells in the wall) are 0.1% off.
 
 We can also export labelled point clouds directly from the atlas using the `points` command
 ```
