@@ -10,7 +10,7 @@ from __future__ import annotations
 import functools
 import logging
 from pathlib import Path
-from typing import Iterable, NamedTuple
+from typing import Any, Iterable, NamedTuple
 
 import meshio
 import numpy as np
@@ -240,6 +240,77 @@ def load_template() -> Template:
         data_dir / "ETIndicesMaterials.txt",
         data_dir / "thru_wall_et_indices.txt",
     )
+
+
+def insertion_loop(template: Template) -> np.ndarray:
+    """Return the nodes of the RV insertion line ordered as one closed loop.
+
+    The insertion line is where the RV septum meets the RV free wall. Each
+    short-axis plane through the ventricles cuts it twice, at the anterior and
+    the inferior insertion.
+
+    Parameters
+    ----------
+    template : Template
+        The template; its triangles must connect consecutive insertion nodes, so
+        pass the unrefined template (refinement keeps the node indices).
+
+    Returns
+    -------
+    np.ndarray
+        The insertion nodes, in order around the loop
+
+    Raises
+    ------
+    ValueError
+        If the insertion nodes do not form a single closed loop
+    """
+    edges, _ = edges_with_counts(template.faces)
+    on_line = np.isin(edges, template.insertion).all(axis=1)
+    try:
+        loop = order_loop(edges[on_line])
+    except ValueError as e:
+        raise ValueError(f"The RV insertion nodes do not form a single loop: {e}") from e
+    if len(loop) != len(template.insertion):
+        raise ValueError(
+            f"The RV insertion loop has {len(loop)} nodes, expected {len(template.insertion)}"
+        )
+    return loop
+
+
+def landmarks(points: np.ndarray, template: Template | None = None) -> dict[str, Any]:
+    """Anatomical landmarks of a biventricular shape, from the template labels.
+
+    Parameters
+    ----------
+    points : np.ndarray
+        Node coordinates of the template (refined or not)
+    template : Template | None
+        Template the points belong to, by default the vendored biv-me template
+
+    Returns
+    -------
+    dict[str, Any]
+        ``"insertion"``: coordinates of the RV insertion loop, in order (see
+        :func:`insertion_loop`); ``"rv_freewall"`` and ``"rv_septum"``: coordinates
+        of the nodes of these RV endocardial regions; ``"valves"``: coordinates of
+        the centre node of each valve (MV, AV, TV, PV). All as nested lists, so the
+        result can be written as JSON.
+    """
+    template = template or load_template()
+    # Refinement adds nodes after the original ones, so the loop of the original
+    # template is valid for the refined points as well
+    loop = insertion_loop(load_template() if template.num_nodes != NUM_NODES else template)
+
+    def region_nodes(name: str) -> np.ndarray:
+        return np.unique(template.faces[template.regions[name]])
+
+    return {
+        "insertion": points[loop].tolist(),
+        "rv_freewall": points[region_nodes("RV_FREEWALL")].tolist(),
+        "rv_septum": points[region_nodes("RV_SEPTUM")].tolist(),
+        "valves": {v: points[node].tolist() for v, node in template.centres.items()},
+    }
 
 
 def check_points(points: np.ndarray, name: str = "points") -> None:
