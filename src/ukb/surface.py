@@ -6,7 +6,7 @@ from argparse import ArgumentParser
 
 import numpy as np
 import logging
-from typing import Literal, NamedTuple
+from typing import Any, Literal, NamedTuple
 
 from . import atlas, smooth, template
 
@@ -229,6 +229,7 @@ def main(
 
     recipe = RECIPES[geometry]
     files: dict[str, dict[str, list[str]]] = {}
+    landmark_files: dict[str, str] = {}
     for c in cases:
         files[c] = {}
         case_points, case_template = smooth.refine(getattr(points, c), refine)
@@ -241,8 +242,13 @@ def main(
                 template.extract(case_points, [region], template=case_template).write(str(path))
                 logger.info(f"Saved {path}")
                 files[c][name].append(path.name)
+        if recipe.has_rv:
+            path = folder / f"landmarks_{c}.json"
+            path.write_text(json.dumps(template.landmarks(case_points, case_template)))
+            logger.info(f"Saved {path}")
+            landmark_files[c] = path.name
 
-    write_manifest(folder, geometry, recipe.volumes, files)
+    write_manifest(folder, geometry, recipe.volumes, files, landmark_files)
 
 
 class Recipe(NamedTuple):
@@ -258,6 +264,11 @@ class Recipe(NamedTuple):
 
     surfaces: dict[str, tuple[str, ...]]
     volumes: dict[str, tuple[str, ...]]
+
+    @property
+    def has_rv(self) -> bool:
+        """Whether the geometry has the RV free wall, and so the RV landmarks."""
+        return any("RV_FREEWALL" in regions for regions in self.surfaces.values())
 
 
 VALVE_CAPS = {
@@ -319,6 +330,7 @@ def write_manifest(
     geometry: str,
     volumes: dict[str, tuple[str, ...]],
     files: dict[str, dict[str, list[str]]],
+    landmarks: dict[str, str] | None = None,
 ) -> None:
     """Record the volumes of the geometry and which files make up each surface,
     for each case.
@@ -328,12 +340,17 @@ def write_manifest(
     """
     path = folder / MANIFEST
     cases: dict[str, dict[str, list[str]]] = {}
+    landmark_files: dict[str, str] = {}
     if path.exists():
         old = json.loads(path.read_text())
         if old.get("geometry") == geometry:
             cases = old["cases"]
+            landmark_files = old.get("landmarks", {})
     cases.update(files)
-    manifest = {"geometry": geometry, "volumes": volumes, "cases": cases}
+    landmark_files.update(landmarks or {})
+    manifest: dict[str, Any] = {"geometry": geometry, "volumes": volumes, "cases": cases}
+    if landmark_files:
+        manifest["landmarks"] = landmark_files
     path.write_text(json.dumps(manifest, indent=4))
 
 

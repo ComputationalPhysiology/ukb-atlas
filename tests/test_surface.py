@@ -70,3 +70,55 @@ def test_read_manifest_without_volumes(tmp_path):
     (tmp_path / surface.MANIFEST).write_text(json.dumps(manifest))
     _, volumes = surface.read_manifest(tmp_path, "ED")
     assert volumes == {name: list(s) for name, s in surface.BIV.volumes.items()}
+
+
+@pytest.mark.parametrize("refine", [0, 1])
+def test_surf_writes_landmarks(tmp_path, atlas_path, refine):
+    import json
+
+    import ukb.cli
+
+    ukb.cli.main(
+        [
+            "surf",
+            str(tmp_path),
+            "--case",
+            "ED",
+            "--cache-dir",
+            str(atlas_path.parent),
+            "--refine",
+            str(refine),
+        ]
+    )
+    path = tmp_path / "landmarks_ED.json"
+    lm = json.loads(path.read_text())
+    assert set(lm) == {"insertion", "rv_freewall", "rv_septum", "valves"}
+    assert len(lm["insertion"]) == 80
+    manifest = json.loads((tmp_path / surface.MANIFEST).read_text())
+    assert manifest["landmarks"] == {"ED": "landmarks_ED.json"}
+    # The landmarks lie on the written surfaces: every insertion point is a node of the RV septum
+    import meshio
+
+    septum = meshio.read(tmp_path / "RV_SEPTUM_ED.stl").points
+    d = np.linalg.norm(septum[None, :, :] - np.array(lm["insertion"])[:, None, :], axis=2).min(
+        axis=1
+    )
+    assert d.max() < 1e-4
+
+
+def test_surf_lv_writes_no_landmarks(tmp_path, atlas_path):
+    import ukb.cli
+
+    ukb.cli.main(
+        [
+            "surf",
+            str(tmp_path),
+            "--case",
+            "ED",
+            "--cache-dir",
+            str(atlas_path.parent),
+            "--geometry",
+            "lv",
+        ]
+    )
+    assert not (tmp_path / "landmarks_ED.json").exists()

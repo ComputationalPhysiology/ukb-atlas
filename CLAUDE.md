@@ -68,7 +68,9 @@ atlas.py  →  surface.py   →  clip.py      →  mesh.py
   regions and each volume name to the surfaces enclosing it (closed variants add valve caps and
   `LV_CAVITY`/`RV_CAVITY`). `surf` writes one STL per region (`{REGION}_{case}.stl`) and a `surfaces.json` manifest
   mapping surface name → files per case, plus the volumes; `read_manifest` returns
-  `(files, volumes)` and is how later stages find them. Regions are
+  `(files, volumes)` and is how later stages find them. Geometries with an RV also get
+  `landmarks_{case}.json` (`template.landmarks`: the ordered RV insertion loop, the RV free-wall and
+  septum nodes, the valve centres), listed under `"landmarks"` in the manifest. Regions are
   kept in separate files on purpose: gmsh fails to mesh the volume when the RV septum and free wall
   are one surface. New geometries (LV-only, closed valves) should be new recipes.
 - **`smooth.py`** — `surf --refine N`. The template subdivides the 354 faces of the biv-me

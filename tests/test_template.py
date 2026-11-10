@@ -109,3 +109,48 @@ def test_unknown_material_raises(tmp_path):
 def test_extract_unknown_region_raises():
     with pytest.raises(ValueError, match="FOO"):
         template.extract(np.zeros((5810, 3)), ["FOO"])
+
+
+def template_edges(t: template.Template) -> set[tuple[int, int]]:
+    return set(edge_counts(t.faces))
+
+
+def test_insertion_loop_closed():
+    t = template.load_template()
+    loop = template.insertion_loop(t)
+    assert len(loop) == 80
+    assert set(loop.tolist()) == set(t.insertion.tolist())
+    edges = template_edges(t)
+    for a, b in zip(loop, np.roll(loop, -1)):
+        assert tuple(sorted((int(a), int(b)))) in edges
+
+
+def test_insertion_on_both_rv_surfaces():
+    t = template.load_template()
+    septum = np.unique(t.faces[t.regions["RV_SEPTUM"]])
+    freewall = np.unique(t.faces[t.regions["RV_FREEWALL"]])
+    loop = template.insertion_loop(t)
+    assert np.isin(loop, septum).all()
+    assert np.isin(loop, freewall).all()
+
+
+def test_insertion_loop_rejects_broken_loop():
+    t = template.load_template()
+    with pytest.raises(ValueError, match="insertion"):
+        template.insertion_loop(t._replace(insertion=t.insertion[:-1]))
+
+
+def test_landmarks_mean_shape():
+    t = template.load_template()
+    points = np.random.default_rng(2).random((5810, 3))
+    lm = template.landmarks(points, t)
+    assert set(lm) == {"insertion", "rv_freewall", "rv_septum", "valves"}
+    loop = template.insertion_loop(t)
+    assert np.allclose(lm["insertion"], points[loop])
+    assert np.array(lm["insertion"]).shape == (80, 3)
+    for name in ("RV_FREEWALL", "RV_SEPTUM"):
+        nodes = np.unique(t.faces[t.regions[name]])
+        assert np.allclose(lm[name.lower()], points[nodes])
+    assert set(lm["valves"]) == {"MV", "AV", "TV", "PV"}
+    for v, node in t.centres.items():
+        assert np.allclose(lm["valves"][v], points[node])
