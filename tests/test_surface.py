@@ -122,3 +122,41 @@ def test_surf_lv_writes_no_landmarks(tmp_path, atlas_path):
         ]
     )
     assert not (tmp_path / "landmarks_ED.json").exists()
+
+
+def _points(folder, name="LV_EPI_ED.stl"):
+    meshio = pytest.importorskip("meshio")
+    return np.asarray(meshio.read(folder / name).points)
+
+
+def test_surface_score_changes_ukb_shape(tmp_path, atlas_path):
+    surface.main(tmp_path / "a", mode=-1, case="ED", cache_dir=atlas_path.parent)
+    surface.main(
+        tmp_path / "b", score=np.r_[3.0, np.zeros(24)], case="ED", cache_dir=atlas_path.parent
+    )
+    a, b = _points(tmp_path / "a"), _points(tmp_path / "b")
+    assert a.shape == b.shape
+    assert np.abs(a - b).max() > 1.0
+
+
+def test_surface_score_matches_custom_points(tmp_path, atlas_path):
+    from ukb import atlas
+
+    s = np.r_[1.0, -2.0, np.zeros(23)]
+    surface.main(tmp_path / "a", score=s, case="ED", cache_dir=atlas_path.parent)
+    points = atlas.generate_points(filename=atlas_path, score=s)
+    surface.main(tmp_path / "b", custom_points=points, case="ED", cache_dir=atlas_path.parent)
+    assert np.array_equal(_points(tmp_path / "a"), _points(tmp_path / "b"))
+
+
+def test_cli_score(tmp_path, atlas_path):
+    from ukb import cli
+
+    cache = str(atlas_path.parent)
+    cli.main(
+        ["surf", str(tmp_path / "a"), "--score", "3", "0", "--case", "ED", "--cache-dir", cache]
+    )
+    surface.main(tmp_path / "b", score=np.array([3.0, 0.0]), case="ED", cache_dir=atlas_path.parent)
+    assert np.array_equal(_points(tmp_path / "a"), _points(tmp_path / "b"))
+    params = json.loads((tmp_path / "a" / "parameters.json").read_text())
+    assert params["score"] == [3.0, 0.0]
