@@ -94,6 +94,16 @@ def add_parser_arguments(parser: ArgumentParser) -> None:
         ),
     )
     parser.add_argument(
+        "--score",
+        type=float,
+        nargs="+",
+        default=None,
+        help=(
+            "PCA scores (in standard deviations, one per mode from mode 0) "
+            "to generate the shape from. Overrides --mode and --std."
+        ),
+    )
+    parser.add_argument(
         "--burns-path",
         type=Path,
         default=None,
@@ -172,6 +182,8 @@ def main(
         raise NotImplementedError(atlas.ALL_NOT_SUPPORTED)
 
     folder.mkdir(exist_ok=True, parents=True)
+    if score is not None:  # a list from the command line
+        score = np.asarray(score, dtype=float)
 
     args_json = json.dumps(
         {
@@ -217,6 +229,7 @@ def main(
                 filename=filename,
                 mode=mode,
                 std=std,
+                score=score,
             )
 
     if case == "both":
